@@ -1,0 +1,23 @@
+manifest:
+  self:
+    west-commands: scripts/west-commands.yml
+
+  remotes:
+    - name: zephyr-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  defaults:
+    remote: zephyr-rtos
+
+  projects:
+    - name: zephyr
+      repo-path: zephyr
+      remote: zephyr-rtos
+      revision: v3.7.0
+      import:
+        path-prefix: third-party
+        name-allowlist:
+          - zephyr 
+          - hal_rpi_pico
+          - cmsis
+
