@@ -1,7 +1,8 @@
 / {
-    aliases {
-        uart-p1 = &uart21;
+    chosen {
+        zephyr,p1-uart = &uart21;
     };
+
     outputs {
 		compatible = "gpio-leds";
 		data_req: data_req {
