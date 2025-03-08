@@ -1,0 +1,27 @@
+/ {
+    aliases {
+        uart-p1 = &uart1;
+    };
+    outputs {
+		compatible = "gpio-leds";
+		data_req: data_req {
+			gpios = <&gpio0 8 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
+
+&pinctrl {
+    uart1_default: uart1_default {
+        group1 {
+			pinmux = <UART1_RX_P9>;
+			input-enable;
+        };
+    };
+};
+
+&uart1 {
+	current-speed = <115200>;
+	status = "okay";
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+};

@@ -20,4 +20,6 @@ manifest:
           - zephyr 
           - hal_rpi_pico
           - cmsis
+          - segger
+          - hal_nordic
 
