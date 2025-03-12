@@ -15,9 +15,9 @@ typedef enum platform_log_level {
     PLATFORM_LOG_FATAL,
 } platform_log_level_t;
 
-typedef void (*telegram_received_callback_t)(uint8_t *data, size_t len);
+typedef void (*data_received_callback_t)(uint8_t *data, size_t len);
 
-int platform_init(telegram_received_callback_t cb);
+int platform_init(data_received_callback_t cb);
 
 int platform_write_data_req(bool high);
 

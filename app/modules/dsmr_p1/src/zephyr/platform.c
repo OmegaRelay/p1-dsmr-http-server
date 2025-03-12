@@ -45,14 +45,14 @@ static uint8_t rx_buf[CONFIG_DSMR_P1_BUF_SIZE] = {0};
 static struct k_thread dsmr_p1_rx_thread;
 K_THREAD_STACK_DEFINE(dsmr_p1_rx_stack, CONFIG_DSMR_P1_BUF_SIZE * 2);
 
-static telegram_received_callback_t telegram_received_cb;
+static data_received_callback_t telegram_received_cb;
 
 
 /******************************************************************************
  * Public Function Implementation
  *****************************************************************************/
 
-int platform_init(telegram_received_callback_t cb) {
+int platform_init(data_received_callback_t cb) {
     int ret;
     LOG_INF("intialising");
     if (cb == NULL) {
@@ -75,7 +75,7 @@ int platform_init(telegram_received_callback_t cb) {
     }
 
     telegram_received_cb = cb;
-    k_thread_create(&dsmr_p1_rx_thread, &dsmr_p1_rx_stack, K_THREAD_STACK_SIZEOF(dsmr_p1_rx_stack), &thread_entry, NULL, NULL, NULL, 1, 0, K_NO_WAIT);
+    k_thread_create(&dsmr_p1_rx_thread, dsmr_p1_rx_stack, K_THREAD_STACK_SIZEOF(dsmr_p1_rx_stack), &thread_entry, NULL, NULL, NULL, 1, 0, K_NO_WAIT);
     return 0;
 }
 
@@ -96,21 +96,22 @@ int platform_write_data_req(bool high) {
 int platform_log(platform_log_level_t log_level, const char *format, ...) {
 
 #if defined(CONFIG_LOG)
-	int level = log_translate(log_level);
-	va_list param_list;
+    int level = log_translate(log_level);
+    va_list param_list;
 
-	if (level < 0) {
-		return;
-	}
+    if (level < 0) {
+        return -EINVAL;
+    }
 
-	va_start(param_list, format);
-	log_generic(level, format, param_list);
-	va_end(param_list);
+    va_start(param_list, format);
+    log_generic(level, format, param_list);
+    va_end(param_list);
 #else
-	ARG_UNUSED(log_level);
-	ARG_UNUSED(format);
+    ARG_UNUSED(log_level);
+    ARG_UNUSED(format);
 #endif
 
+    return 0;
 }
 
 SYS_INIT(dsmr_p1_init, POST_KERNEL, 90);
@@ -123,12 +124,12 @@ SYS_INIT(dsmr_p1_init, POST_KERNEL, 90);
 static void thread_entry(void *p1, void *p2, void *p3) {
     int ret;
     bool is_crc = true;
-    int crc_count;
+    int crc_count = 0;
     uint16_t crc = 0;
     LOG_INF("started");
 
     int offset = 0;
-    for (;;) {
+    for (;;) { // TODO: add timeout
         if (offset >= sizeof(rx_buf)){
             LOG_HEXDUMP_WRN(rx_buf, offset, "buffer overflow");
             goto reset;
@@ -166,21 +167,20 @@ reset:
 }
 
 /* Convert dsmr_p1 log level to zephyr log level. */
-static int log_translate(platform_log_level_t log_level)
-{
-	switch (log_level) {
-	case PLATFORM_LOG_NONE:
-	case PLATFORM_LOG_DEBUG:
-		return LOG_LEVEL_DBG;
-	case PLATFORM_LOG_INFO:
-		return LOG_LEVEL_INF;
-	case PLATFORM_LOG_WARNING:
-		return LOG_LEVEL_WRN;
-	case PLATFORM_LOG_ERROR:
-		return LOG_LEVEL_ERR;
-	default:
-		break;
-	}
+static int log_translate(platform_log_level_t log_level) {
+    switch (log_level) {
+    case PLATFORM_LOG_NONE:
+    case PLATFORM_LOG_DEBUG:
+        return LOG_LEVEL_DBG;
+    case PLATFORM_LOG_INFO:
+        return LOG_LEVEL_INF;
+    case PLATFORM_LOG_WARNING:
+        return LOG_LEVEL_WRN;
+    case PLATFORM_LOG_ERROR:
+        return LOG_LEVEL_ERR;
+    default:
+        break;
+    }
 
-	return -1;
+    return -1;
 }
