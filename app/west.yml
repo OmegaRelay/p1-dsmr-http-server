@@ -22,4 +22,5 @@ manifest:
           - cmsis
           - segger
           - hal_nordic
+          - hal_espressif
 

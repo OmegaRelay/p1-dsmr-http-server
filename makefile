@@ -4,7 +4,12 @@ SHELL := /bin/bash # needed for source command
 
 export PYTHONVENV = ${PWD}/.venv/bin/activate
 
-BOARD = nrf54l15pdk/nrf54l15/cpuapp
+ifeq (esp, $(filter esp,${MAKECMDGOALS}))
+	BOARD = esp32_devkitc_wroom/esp32/procpu
+else 
+	BOARD = nrf54l15pdk/nrf54l15/cpuapp
+endif 
+
 ARGS +=-b $(BOARD)
 
 SET_ENV = source ${PYTHONVENV}
@@ -18,6 +23,12 @@ bootstrap:
 update:
 	${WEST} update
 
+clean:
+	@rm -rf build
+
 .PHONY: build
 build:
 	${WEST} build app ${ARGS}
+
+esp:
+	@printf ""

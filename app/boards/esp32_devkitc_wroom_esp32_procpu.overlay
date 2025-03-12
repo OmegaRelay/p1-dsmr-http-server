@@ -1,0 +1,22 @@
+
+/ {
+    chosen {
+        zephyr,p1-uart = &uart2;
+    };
+
+    aliases {
+        led0 = &led0;
+    };
+
+    outputs {
+		compatible = "gpio-leds";
+		led0: led0 {
+			gpios = <&gpio0 23 (GPIO_ACTIVE_HIGH | GPIO_PUSH_PULL)>;
+		};
+	};
+};
+
+&uart2 {
+    status = "okay";
+    current-speed = <115200>;
+};
