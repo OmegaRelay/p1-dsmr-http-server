@@ -14,6 +14,10 @@
 #include <stdbool.h>
 #include <time.h>
 
+#define DSMR_P1_TELEGRAM_MAX_SIZE 1024
+
+#define DSMR_P1_TRAILER_LEN 7U // ! CRC16 CR LF (1+4+1+1)
+
 struct tarrif {
     long double tarrif_1; // kWh
     long double tarrif_2; // kWh

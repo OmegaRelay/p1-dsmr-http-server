@@ -62,16 +62,25 @@ int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t a_cb, void *a_user
  *****************************************************************************/
 
 static void telegram_received_cb(uint8_t *data, size_t len) {
+    if (data[len - DSMR_P1_TRAILER_LEN] != '!') {
+        platform_log(PLATFORM_LOG_ERROR, "received bad telegram");
+        return;
+    }
+    platform_log(PLATFORM_LOG_INFO, "telegram received");
+    
     uint16_t rx_crc = 0;
-    char rx_crc_str[4];
-    strncpy(rx_crc_str, (const char *) &data[len - sizeof(rx_crc_str)], sizeof(rx_crc_str));
+    char rx_crc_str[5];
+    strncpy(rx_crc_str, (const char *) &data[len - DSMR_P1_TRAILER_LEN + 1], sizeof(rx_crc_str));
+    rx_crc_str[4] = 0;
     rx_crc = strtol(rx_crc_str, NULL, 16);
-    len -= sizeof(rx_crc_str);
 
-    uint16_t calc_crc = calc_p1_telegram_crc(data, len); 
+    uint16_t calc_crc = calc_p1_telegram_crc(data, len - DSMR_P1_TRAILER_LEN + 1); 
     if (calc_crc != rx_crc) {
         platform_log(PLATFORM_LOG_ERROR, "received bad crc");
+        platform_log(PLATFORM_LOG_DEBUG, "calculated: 0x%04X, received 0x%04X", calc_crc, rx_crc);
+        return;
     }
+    platform_log(PLATFORM_LOG_DEBUG, "crc ok");
 
     struct dsmr_p1_telegram telegram = parse_p1_telegram(data, len);
     user_cb(telegram, user_data);
@@ -107,8 +116,9 @@ static struct dsmr_p1_telegram parse_p1_telegram(uint8_t *telegram, size_t teleg
     size_t len = 0;
 
     char *token, *next_token = telegram;
-    while (next_token < (telegram + telegram_len)) {
-        token = strtok(next_token, DSMR_P1_COSEM_DELIM);
+    while (next_token < (char *)(telegram + telegram_len)) {
+        char *saveptr;
+        token = strtok_r(next_token, DSMR_P1_COSEM_DELIM, &saveptr);
         if (token == NULL) {
             break;
         }
@@ -122,18 +132,22 @@ static struct dsmr_p1_telegram parse_p1_telegram(uint8_t *telegram, size_t teleg
 }
 
 static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, size_t len) {
-    char *obis_code = strtok(cosem, "()");
-    if (obis_code == NULL) {
+    char *saveptr;
+    const char *obis_delim = "()";
+    char *obis_code = strtok_r(cosem, obis_delim, &saveptr);
+    if (obis_code == NULL || strnlen(obis_code, len) == len) {
+        platform_log(PLATFORM_LOG_DEBUG, "not a cosem object");
         return;
     }
-    int medium, channel, physical, quantity, range;
+    platform_log(PLATFORM_LOG_DEBUG, "cosem object: %s", cosem);
+    platform_log(PLATFORM_LOG_DEBUG, "parsing cosem object %p, %s", obis_code, obis_code);
     struct obis_code code;
-    sscanf(obis_code, "%d-%d:%d.%d.%d", &code.medium, &code.channel, &code.physical, &code.quantity, &code.type);
-    char *value = strtok(NULL, "()");
+    char *value = strtok_r(NULL, obis_delim, &saveptr);
     if (value == NULL) {
         return;
     }
 
+    const char *value_delim = "*";
     if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_VERSION) == 0) {
         telegram->version = strtol(value, NULL, 16);
     }
@@ -141,31 +155,31 @@ static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, s
         telegram->timestamp = parse_cosem_timestamp(value);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_DELIVERED_TO_CLIENT_T1) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->elec_to_client.tarrif_1 = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_DELIVERED_BY_CLIENT_T1) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->elec_by_client.tarrif_1 = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_DELIVERED_TO_CLIENT_T2) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->elec_to_client.tarrif_2 = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_DELIVERED_BY_CLIENT_T2) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->elec_by_client.tarrif_2 = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_ELEC_DELIVERED) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->power_delivered = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_ELEC_RECEIVED) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->power_received = strtold(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_TARRIF_INDICATOR) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->tarrif_indicator = strtol(value, NULL, 10);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_FAILURE_NR) == 0) {
@@ -174,15 +188,15 @@ static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, s
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_FAILURE_NR_LONG) == 0) {
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_VOLTAGE_PL1) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl1.voltage = strtof(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_VOLTAGE_PL2) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl2.voltage = strtof(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_VOLTAGE_PL3) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl3.voltage = strtof(value, NULL);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_VOLTAGE_PL1_NR_SAGS) == 0) {
@@ -204,15 +218,15 @@ static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, s
         telegram->pl3.nr_voltage_swells = strtol(value, NULL, 10);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_CURRENT_PL1) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl1.current = strtol(value, NULL, 10);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_CURRENT_PL2) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl2.current = strtol(value, NULL, 10);
     }
     else if (strcmp(cosem, DSMR_P1_OBIS_REF_STR_POWER_CURRENT_PL3) == 0) {
-        value = strtok(value, "*");
+        value = strtok(value, value_delim);
         telegram->pl3.current = strtol(value, NULL, 10);
     }
 }
