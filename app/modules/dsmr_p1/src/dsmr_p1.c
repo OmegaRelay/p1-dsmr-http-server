@@ -86,10 +86,17 @@ static void telegram_received_cb(uint8_t *data, size_t len) {
  */
 static uint16_t calc_p1_telegram_crc(const uint8_t *src, size_t len) {
     uint16_t crc = 0;
-    for (size_t i = 0; i < len; i++) {
-        crc ^= (uint16_t)src[i] << 8;
-        for (unsigned k = 0; k < 8; k++)
-            crc = crc & 0x8000 ? (crc << 1) ^ 0x8005 : crc << 1;
+    size_t i, j;
+
+    for (i = 0; i < len; i++) {
+        crc ^= *src++;
+        for (j = 0; j < 8; j++) {
+            if (crc & 0x1) {
+                crc = (crc >> 1) ^ 0xA001;
+            } else {
+                crc = crc >> 1;
+            }
+        }
     }
     return crc;
 }
