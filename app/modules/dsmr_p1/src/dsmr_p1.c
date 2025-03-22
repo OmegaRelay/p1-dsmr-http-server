@@ -53,6 +53,7 @@ int dsmr_p1_disable(void) {
 int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t a_cb, void *a_user_data) {
     user_cb = a_cb;
     user_data = a_user_data;
+    return 0;
 }
 
 
