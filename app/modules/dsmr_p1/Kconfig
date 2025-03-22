@@ -1,6 +1,8 @@
 menuconfig DSMR_P1
 	bool "DSMR P1 Port Support"
     depends on SERIAL && GPIO
+    select UART_INTERRUPT_DRIVEN
+    select RING_BUFFER
 	help
 	  This option enables the Dutch-Smart-Meter-Requirement P1 Port library
 
@@ -12,7 +14,7 @@ source "subsys/logging/Kconfig.template.log_config"
 
 config DSMR_P1_BUF_SIZE
     int "DSMR P1 buffer size"
-    default 1024
+    default 4096
     help
         This option sets the size of the static message buffer of the DSMR P1 library
 
