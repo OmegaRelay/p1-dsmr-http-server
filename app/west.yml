@@ -18,7 +18,7 @@ manifest:
         path-prefix: third-party
         name-allowlist:
           - zephyr 
-          - hal_rpi_pico
+          - mbedtls
           - cmsis
           - segger
           - hal_nordic
