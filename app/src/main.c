@@ -96,12 +96,13 @@ HTTP_RESOURCE_DEFINE(p1_data_resource, http_service, "/data",
 		     &server_data_resource_detail);
 
 static const struct json_obj_descr json_tariff_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_FLOAT),
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_FLOAT),
+    // TODO: make float once Zephyr PR #86956 is merged
+    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_NUMBER), 
+    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_NUMBER),
 };
 
 static const struct json_obj_descr json_phase_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct phase, voltage, JSON_TOK_FLOAT),
+    JSON_OBJ_DESCR_PRIM(struct phase, voltage, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_sags, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_swells, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_PRIM(struct phase, current, JSON_TOK_NUMBER),
@@ -109,11 +110,16 @@ static const struct json_obj_descr json_phase_descr[] = {
 
 static const struct json_obj_descr json_telegram_descr[] = {
 	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, version, JSON_TOK_NUMBER),
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, equipment_id, JSON_TOK_STRING),
+	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, timestamp, JSON_TOK_NUMBER),
+    // FIXME: string buffer causes crash during encoding
+	// JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, equipment_id, JSON_TOK_STRING), 
 	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, device_type, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_to_client, json_tariff_descr),
     JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_by_client, json_tariff_descr),
     JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, tarrif_indicator, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl1, json_phase_descr),
+    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl2, json_phase_descr),
+    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl3, json_phase_descr),
 };
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET, net_mgmt_event_static_handler_cb, NULL);
@@ -124,6 +130,7 @@ K_SEM_DEFINE(scan_done_sem, 0, 1);
 
 static bool is_wifi_connected = false;
 static bool has_ip_address = false;
+static struct dsmr_p1_telegram last_telegram;
 static bool has_data = false;
 
 
