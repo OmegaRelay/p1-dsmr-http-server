@@ -23,7 +23,7 @@ static void telegram_received_cb(uint8_t *telegram, size_t len);
 static uint16_t calc_p1_telegram_crc(const uint8_t *src, size_t len);
 static struct dsmr_p1_telegram parse_p1_telegram(uint8_t *telegram, size_t telegram_len);
 static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, size_t len);
-static struct tm parse_cosem_timestamp(char *value);
+static int64_t parse_cosem_timestamp(char *value);
 
 
 /******************************************************************************
@@ -231,37 +231,40 @@ static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem, s
     }
 }
 
-static struct tm parse_cosem_timestamp(char *value) {
-    struct tm ret = {0};
+static int64_t parse_cosem_timestamp(char *value) {
+    int64_t ret = 0;
+    struct tm tm = {0};
     char sub_value[3] = {0};
     int offset = 0;
     
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_year = strtol(sub_value, NULL, 10);
+    tm.tm_year = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_mon = strtol(sub_value, NULL, 10);
+    tm.tm_mon = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_mday = strtol(sub_value, NULL, 10);
+    tm.tm_mday = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_hour = strtol(sub_value, NULL, 10);
+    tm.tm_hour = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_min = strtol(sub_value, NULL, 10);
+    tm.tm_min = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 2);
-    ret.tm_sec = strtol(sub_value, NULL, 10);
+    tm.tm_sec = strtol(sub_value, NULL, 10);
     offset += 2;
 
     memcpy(sub_value, &value[offset], 1);
-    ret.tm_isdst = sub_value[0] == 'S';
+    tm.tm_isdst = sub_value[0] == 'S';
 
+
+    ret = (int64_t)mktime(&tm);
     return ret;
 }

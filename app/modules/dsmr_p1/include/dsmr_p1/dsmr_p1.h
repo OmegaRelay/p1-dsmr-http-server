@@ -17,6 +17,7 @@
 #define DSMR_P1_TELEGRAM_MAX_SIZE 1024
 
 #define DSMR_P1_TRAILER_LEN 7U // ! CRC16 CR LF (1+4+1+1)
+#define DSMR_P1_EQUIPMENT_ID_MAX_LEN 64
 
 struct tarrif {
     long double tarrif_1; // kWh
@@ -32,8 +33,8 @@ struct phase {
 
 struct dsmr_p1_telegram {
     uint8_t version;
-    struct tm timestamp;
-    char *equipment_id;
+    int64_t timestamp;
+    char equipment_id[DSMR_P1_EQUIPMENT_ID_MAX_LEN];
     uint32_t device_type;
     struct tarrif elec_to_client;
     struct tarrif elec_by_client;
