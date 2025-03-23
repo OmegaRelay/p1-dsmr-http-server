@@ -124,8 +124,7 @@ K_SEM_DEFINE(scan_done_sem, 0, 1);
 
 static bool is_wifi_connected = false;
 static bool has_ip_address = false;
-static struct dsmr_p1_telegram last_telegram;
-static bool has_no_data = true;
+static bool has_data = false;
 
 
 /*******************************************************************************
@@ -325,7 +324,7 @@ static int data_handler(struct http_client_ctx *client,
 		return 0;
 	}
 
-    if (has_no_data) {
+    if (!has_data) {
         response_ctx->status = HTTP_200_OK;
         strcpy(resp_buffer, "{}");
         response_ctx->body = resp_buffer;
@@ -351,5 +350,5 @@ static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user
     LOG_INF("p1 telegram received");
     LOG_HEXDUMP_DBG(&telegram, sizeof(telegram), "telegram: ");
     last_telegram = telegram;
-    has_no_data = false;
+    has_data = true;
 }
