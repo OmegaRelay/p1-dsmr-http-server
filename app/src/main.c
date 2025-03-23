@@ -53,15 +53,20 @@ const char wifi_psk[] = "";
  * Local Function Prototypes
  ******************************************************************************/
 
-static int init_wifi(void);
+static int connect_wifi(void);
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
 						                     struct net_if *iface,
 						                     void *info, size_t info_length,
 						                     void *user_data);
 static void handle_wifi_connect_result(struct wifi_status *status);
 static void handle_ipv4_result(struct net_if *iface);
-static int p1_data_handler(struct http_client_ctx *client, enum http_data_status status, 
-                            uint8_t *data_buffer, size_t data_len, void *user_data);
+
+static int data_handler(struct http_client_ctx *client,
+					  enum http_data_status status,
+					  const struct http_request_ctx *request_ctx,
+					  struct http_response_ctx *response_ctx,
+					  void *user_data);
+
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data);
 
 
@@ -69,27 +74,26 @@ static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user
  * Local Variables
  ******************************************************************************/
 
-static uint8_t data_buffer[2048] = {0};
-struct http_resource_detail_dynamic p1_data_resource_detail = {
+static uint8_t resp_buffer[2048] = {0};
+struct http_resource_detail_dynamic server_data_resource_detail = {
 	.common = {
-			.type = HTTP_RESOURCE_TYPE_DYNAMIC,
 			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
+			.type = HTTP_RESOURCE_TYPE_DYNAMIC,
 			.content_encoding = "json",
 			.content_type = "application/json",
 		},
-    .data_buffer = data_buffer,
-	.data_buffer_len = sizeof(data_buffer),
-    .cb = &p1_data_handler,
+    .cb = &data_handler,
+    .user_data = NULL,
 };
 
 
 static uint16_t http_service_port = 80;
 
-HTTP_SERVICE_DEFINE(http_service, NULL, &http_service_port, 1,
-		    10, NULL);
+HTTP_SERVICE_DEFINE(http_service, "", &http_service_port, 1,
+		    10, NULL, NULL);
 
 HTTP_RESOURCE_DEFINE(p1_data_resource, http_service, "/data",
-		     &p1_data_resource_detail);
+		     &server_data_resource_detail);
 
 static const struct json_obj_descr json_tariff_descr[] = {
     JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_FLOAT),
@@ -121,6 +125,7 @@ K_SEM_DEFINE(scan_done_sem, 0, 1);
 static bool is_wifi_connected = false;
 static bool has_ip_address = false;
 static struct dsmr_p1_telegram last_telegram;
+static bool has_no_data = true;
 
 
 /*******************************************************************************
@@ -141,10 +146,11 @@ int main(void) {
         return ret;
     }
 
-    ret = init_wifi();
+    ret = connect_wifi();
     if (ret < 0) {
         return ret;
     }
+    http_server_start();
 
     dsmr_p1_set_callback(&p1_telegram_received_cb, NULL);
     dsmr_p1_enable();
@@ -163,7 +169,7 @@ int main(void) {
  * Local Function Implementation
  ******************************************************************************/
 
-static int init_wifi(void) {
+static int connect_wifi(void) {
     int ret = 0;
     
     struct net_if *iface = net_if_get_first_wifi();
@@ -174,12 +180,14 @@ static int init_wifi(void) {
 
     LOG_INF("starting network interface %p", iface);
     uint8_t counter = 0;
+    net_if_up(iface);
     while (!net_if_is_up(iface) && counter < 10) {
+        net_if_up(iface);
         k_sleep(K_MSEC(100));
         counter++;
     }
 
-    if (counter == 10) {
+    if (counter == 100) {
         LOG_ERR("could not start wifi interface");
         return -ETIMEDOUT;
     }
@@ -237,7 +245,6 @@ static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         // Start AP mode and the provisioning http server
         LOG_WRN("wifi disconnected");
-        http_server_stop();
         is_wifi_connected = false;
         break;
 
@@ -298,37 +305,51 @@ static void handle_ipv4_result(struct net_if *iface) {
                                         buf, sizeof(buf)));
     }
 
-    http_server_start();
     has_ip_address = true;
 }
 
-static int p1_data_handler(struct http_client_ctx *client,
-					       enum http_data_status status,
-					       uint8_t *buffer,
-					       size_t buffer_size,
-					       void *user_data) {
-    LOG_INF("http call");
-    if (status != HTTP_SERVER_DATA_FINAL) {
+static int data_handler(struct http_client_ctx *client,
+					  enum http_data_status status,
+					  const struct http_request_ctx *request_ctx,
+					  struct http_response_ctx *response_ctx,
+					  void *user_data) {
+	int err;
+    struct dsmr_p1_telegram telegram = last_telegram; // avoid data changing over course of encoding
+    response_ctx->final_chunk = (status == HTTP_SERVER_DATA_FINAL);
+    response_ctx->body = NULL;
+    response_ctx->body_len = 0;
+
+    LOG_INF("http request received");
+    if (status == HTTP_SERVER_DATA_ABORTED) {
+		LOG_DBG("Transaction aborted.");
+		return 0;
+	}
+
+    if (has_no_data) {
+        response_ctx->status = HTTP_200_OK;
+        strcpy(resp_buffer, "{}");
+        response_ctx->body = resp_buffer;
+        response_ctx->body_len = strlen(resp_buffer);
         return 0;
     }
 
-	int err;
-    struct dsmr_p1_telegram telegram = last_telegram; // avoid data changing over course of encoding
-    err = json_obj_encode_buf(json_telegram_descr, ARRAY_SIZE(json_telegram_descr), &telegram, buffer,
-				   buffer_size);
+    err = json_obj_encode_buf(json_telegram_descr, ARRAY_SIZE(json_telegram_descr), &telegram, resp_buffer,
+				   sizeof(resp_buffer));
     if (err < 0) {
         LOG_ERR("could not encode json: %d", err);
+        response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
         return -ENOMEM;
     }
-    LOG_DBG("%s", buffer);
-    return 12;
-    
+    response_ctx->status = HTTP_200_OK;
+    response_ctx->body = resp_buffer;
+    response_ctx->body_len = strlen(resp_buffer);
+    return 0;
 }
 
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data) {
     ARG_UNUSED(user_data);
     LOG_INF("p1 telegram received");
-    sizeof(long double);
     LOG_HEXDUMP_DBG(&telegram, sizeof(telegram), "telegram: ");
     last_telegram = telegram;
+    has_no_data = false;
 }

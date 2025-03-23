@@ -13,7 +13,7 @@ manifest:
     - name: zephyr
       repo-path: zephyr
       remote: zephyr-rtos
-      revision: v3.7.0
+      revision: v4.1.0
       import:
         path-prefix: third-party
         name-allowlist:
@@ -23,4 +23,5 @@ manifest:
           - segger
           - hal_nordic
           - hal_espressif
+          - hal_rpi_pico
 
