@@ -3,8 +3,16 @@
         {
             "name": "CMake",
             "configurationProvider": "ms-vscode.cmake-tools",
-            "includePath": ["${workspaceFolder/third-party/zephyr/include"],
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+            "includePath": ["${workspaceFolder}/third-party/zephyr/include"],
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/app",
+                    "${workspaceFolder}/third_party"
+                ],
+                "limitSymbolsToIncludedHeaders": true,
+                "databaseFilename": ""
+            }
         }
     ],
     "version": 4
