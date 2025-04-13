@@ -3,6 +3,7 @@ menuconfig DSMR_P1
     depends on SERIAL && GPIO
     select UART_INTERRUPT_DRIVEN
     select RING_BUFFER
+    select FPU
 	help
 	  This option enables the Dutch-Smart-Meter-Requirement P1 Port library
 
