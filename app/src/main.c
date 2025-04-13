@@ -42,6 +42,12 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
 #define NET_MGMT_EVENT_IP_SET (NET_EVENT_IPV4_ADDR_ADD)
 #define NET_MGMT_EVENT_IF_SET (NET_EVENT_IF_UP | NET_EVENT_IF_DOWN)
 
+#define HEARTBEAT_TOGGLE_PERIOD K_MSEC(500)
+
+#define EVENT_FLAG_HEARTBEAT BIT(0)
+#define EVENT_FLAG_CONNECT_WIFI BIT(1)
+#define EVENT_FLAGS EVENT_FLAG_HEARTBEAT | EVENT_FLAG_CONNECT_WIFI
+
 const struct gpio_dt_spec led_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 // TODO: move to dynamic config
@@ -53,6 +59,7 @@ const char wifi_psk[] = "";
  * Local Function Prototypes
  ******************************************************************************/
 
+static int init_wifi(void);
 static int connect_wifi(void);
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
 						                     struct net_if *iface,
@@ -69,10 +76,17 @@ static int data_handler(struct http_client_ctx *client,
 
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data);
 
+static void heartbeat_toggle_timeout_cb(struct k_timer *timer);
+static void wifi_reconnect_timeout_cb(struct k_timer *timer);
+
 
 /*******************************************************************************
  * Local Variables
  ******************************************************************************/
+
+K_EVENT_DEFINE(event);
+K_TIMER_DEFINE(heartbeat_toggle_timer, heartbeat_toggle_timeout_cb, NULL);
+K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
 static uint8_t resp_buffer[8192] = {0};
 struct http_resource_detail_dynamic server_data_resource_detail = {
@@ -127,7 +141,6 @@ NET_MGMT_REGISTER_EVENT_HANDLER(if_net_mgmt_cb, NET_MGMT_EVENT_IF_SET, net_mgmt_
 
 K_SEM_DEFINE(scan_done_sem, 0, 1);
 
-static bool is_wifi_connected = false;
 static bool has_ip_address = false;
 static struct dsmr_p1_telegram last_telegram;
 static bool has_data = false;
@@ -151,7 +164,7 @@ int main(void) {
         return ret;
     }
 
-    ret = connect_wifi();
+    ret = init_wifi();
     if (ret < 0) {
         return ret;
     }
@@ -160,10 +173,24 @@ int main(void) {
     dsmr_p1_set_callback(&p1_telegram_received_cb, NULL);
     dsmr_p1_enable();
 
+    k_event_post(&event, EVENT_FLAG_HEARTBEAT | EVENT_FLAG_CONNECT_WIFI);
+
     LOG_INF("application started");
-    for (;;) { // heartbeat
-        gpio_pin_toggle_dt(&led_gpio);
-        k_sleep(K_MSEC(300));
+    uint32_t events = 0;
+    for (;;) {
+        events = k_event_wait(&event, EVENT_FLAGS, false, K_FOREVER);
+        if ((events & EVENT_FLAG_HEARTBEAT) == EVENT_FLAG_HEARTBEAT) {
+            gpio_pin_toggle_dt(&led_gpio);
+            k_timer_start(&heartbeat_toggle_timer, HEARTBEAT_TOGGLE_PERIOD, K_FOREVER);
+        }
+        if (events & EVENT_FLAG_CONNECT_WIFI) {
+            ret = connect_wifi();
+            if (ret < 0) {
+                LOG_WRN("could not connect wifi: %d", ret);
+                k_timer_start(&wifi_reconnect_timer, K_MSEC(100), K_FOREVER);
+            }
+        }
+        k_event_clear(&event, events);
     }
 
     return 0;
@@ -174,9 +201,7 @@ int main(void) {
  * Local Function Implementation
  ******************************************************************************/
 
-static int connect_wifi(void) {
-    int ret = 0;
-    
+static int init_wifi(void) {
     struct net_if *iface = net_if_get_first_wifi();
     if (iface == NULL) {
         LOG_ERR("could not get default interface");
@@ -197,15 +222,17 @@ static int connect_wifi(void) {
         return -ETIMEDOUT;
     }
 
-    struct wifi_scan_params scan_params = {0};
-    ret = net_mgmt(NET_REQUEST_WIFI_SCAN, iface, &scan_params,
-                 sizeof(struct wifi_scan_params));
-    if (ret < 0) {
-        LOG_ERR("WiFi scan request failed");
-        return ret;
-    }
-    k_sem_take(&scan_done_sem, K_FOREVER);
+    return 0;
+}
 
+static int connect_wifi(void) {
+    int ret = 0;
+    
+    struct net_if *iface = net_if_get_first_wifi();
+    if (iface == NULL) {
+        LOG_ERR("could not get default interface");
+        return -ENETUNREACH;
+    }
 
     struct wifi_connect_req_params wifi_params = {0};
     wifi_params.ssid = wifi_ssid;
@@ -250,7 +277,7 @@ static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         // Start AP mode and the provisioning http server
         LOG_WRN("wifi disconnected");
-        is_wifi_connected = false;
+        k_event_post(&event, EVENT_FLAG_CONNECT_WIFI);
         break;
 
     case NET_EVENT_IPV4_ADDR_ADD:
@@ -277,10 +304,8 @@ static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
 static void handle_wifi_connect_result(struct wifi_status *status) {
     if (status->status) {
         LOG_WRN("Connection request failed (%d)", status->status);
-        is_wifi_connected = false;
     } else {
         LOG_INF("Connected");
-        is_wifi_connected = true;
     }
 }
 
@@ -354,7 +379,16 @@ static int data_handler(struct http_client_ctx *client,
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data) {
     ARG_UNUSED(user_data);
     LOG_INF("p1 telegram received");
-    LOG_HEXDUMP_DBG(&telegram, sizeof(telegram), "telegram: ");
     last_telegram = telegram;
     has_data = true;
+}
+
+static void heartbeat_toggle_timeout_cb(struct k_timer *timer) {
+    ARG_UNUSED(timer);
+    k_event_post(&event, EVENT_FLAG_HEARTBEAT);
+}
+
+static void wifi_reconnect_timeout_cb(struct k_timer *timer) {
+    ARG_UNUSED(timer);
+    k_event_post(&event, EVENT_FLAG_CONNECT_WIFI);
 }
