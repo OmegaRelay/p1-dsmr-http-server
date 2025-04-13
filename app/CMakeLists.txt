@@ -6,7 +6,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "")
 list(APPEND ZEPHYR_EXTRA_MODULES ${CMAKE_CURRENT_LIST_DIR}/modules/dsmr_p1)
 
 find_package(Zephyr REQUIRED PATHS $ENV{ZEPHYR_BASE})
-project(office-intercom LANGUAGES C)
+project(p1_http_server LANGUAGES C)
 
 zephyr_linker_sources(SECTIONS sections-rom.ld)
 zephyr_linker_section(NAME
