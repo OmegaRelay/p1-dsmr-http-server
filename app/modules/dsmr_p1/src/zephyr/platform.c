@@ -21,7 +21,7 @@
  * Constants
  *****************************************************************************/
 
-#define LOG_LEVEL CONFIG_DMSR_P1_LOG_LEVEL
+#define LOG_LEVEL CONFIG_DSMR_P1_LOG_LEVEL
 #define LOG_MODULE_NAME dmsr_p1_serial
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
@@ -100,7 +100,7 @@ int platform_write_data_req(bool high) {
 
 int platform_log(platform_log_level_t log_level, const char *format, ...) {
 
-#if defined(CONFIG_LOG)
+#ifdef CONFIG_LOG
     int level = log_translate(log_level);
     va_list param_list;
 
@@ -178,7 +178,7 @@ static void thread_entry(void *p1, void *p2, void *p3) {
             LOG_ERR("could not get data from ring buf (%d)", ret);
             continue;
         }
-        LOG_HEXDUMP_INF(buf, ret, "telegram: ");
+        LOG_HEXDUMP_DBG(buf, ret, "telegram: ");
         telegram_received_cb(buf, ret);
     }
 }
