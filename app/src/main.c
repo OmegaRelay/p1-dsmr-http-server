@@ -74,7 +74,7 @@ static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user
  * Local Variables
  ******************************************************************************/
 
-static uint8_t resp_buffer[2048] = {0};
+static uint8_t resp_buffer[8192] = {0};
 struct http_resource_detail_dynamic server_data_resource_detail = {
 	.common = {
 			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
@@ -96,13 +96,12 @@ HTTP_RESOURCE_DEFINE(p1_data_resource, http_service, "/data",
 		     &server_data_resource_detail);
 
 static const struct json_obj_descr json_tariff_descr[] = {
-    // TODO: make float once Zephyr PR #86956 is merged
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_NUMBER), 
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_DOUBLE_FP), 
+    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_DOUBLE_FP),
 };
 
 static const struct json_obj_descr json_phase_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct phase, voltage, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_PRIM(struct phase, voltage, JSON_TOK_FLOAT_FP),
     JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_sags, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_swells, JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_PRIM(struct phase, current, JSON_TOK_NUMBER),
