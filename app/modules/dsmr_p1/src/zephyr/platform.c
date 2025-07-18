@@ -33,6 +33,7 @@ const struct gpio_dt_spec data_req_gpio = GPIO_DT_SPEC_GET_OR(DT_NODELABEL(zephy
  * Local Function Prototypes
  *****************************************************************************/
 
+static void module_init(void);
 static void uart_irq_cb(const struct device *uart, void *user_data);
 static void thread_entry(void *p1, void *p2, void *p3);
 static int log_translate(platform_log_level_t log_level);
@@ -119,12 +120,16 @@ int platform_log(platform_log_level_t log_level, const char *format, ...) {
     return 0;
 }
 
-SYS_INIT(dsmr_p1_init, POST_KERNEL, 90);
+SYS_INIT(module_init, POST_KERNEL, 90);
 
 
 /******************************************************************************
  * Local Function Implementation
  *****************************************************************************/
+
+static void module_init(void) {
+    return dsmr_p1_init(NULL);
+}
 
 static void uart_irq_cb(const struct device *uart_dev, void *user_data) {
  	if (!uart_irq_update(uart_dev)) {
