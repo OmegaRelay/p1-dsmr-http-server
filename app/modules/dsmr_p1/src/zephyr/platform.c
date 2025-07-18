@@ -161,6 +161,7 @@ static void uart_irq_cb(const struct device *uart_dev, void *user_data) {
         rx_offset = 0;
     }
     if (rx_buf[rx_offset - DSMR_P1_TRAILER_LEN] == '!') {
+        uart_irq_rx_disable(uart_dev);
         ring_buf_put(&rx_ring_buf, rx_buf, rx_offset);
         k_sem_give(&data_ready_sem);
         rx_offset = 0;
@@ -175,6 +176,7 @@ static void thread_entry(void *p1, void *p2, void *p3) {
     for (;;) {
         memset(buf, 0, sizeof(buf));
         ret = k_sem_take(&data_ready_sem, K_FOREVER);
+        LOG_INF("telegram rx");
         if (ret != 0) {
             continue;
         }
@@ -185,6 +187,7 @@ static void thread_entry(void *p1, void *p2, void *p3) {
         }
         LOG_HEXDUMP_DBG(buf, ret, "telegram: ");
         telegram_received_cb(buf, ret);
+        uart_irq_rx_enable(p1_uart_dev);
     }
 }
 
