@@ -1,0 +1,10 @@
+[manifest]
+path = app
+file = west.yml
+
+[zephyr]
+base = third-party/zephyr
+
+[build]
+board = esp32_devkitc_wroom/esp32/procpu
+dir-fmt = build/{board}

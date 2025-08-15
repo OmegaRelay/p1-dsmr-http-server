@@ -18,8 +18,6 @@ SET_ENV = source ${PYTHONVENV}
 WEST := ${SET_ENV} && west
 
 bootstrap:
-	rm -rf .west
-	cd app && ${WEST} init -l
 	${WEST} update
 
 update:
