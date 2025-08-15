@@ -12,14 +12,15 @@
  * Includes
  ******************************************************************************/
 
+#include <zephyr/net/http/parser.h>
+#include <zephyr/net/http/parser_url.h>
 #include <dsmr_p1/dsmr_p1.h>
+#include <sys/errno.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/data/json.h>
 
-#include <zephyr/net/http/server.h>
-#include <zephyr/net/http/service.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/socket.h>
 
@@ -38,7 +39,7 @@
 LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
 
 #define NET_MGMT_EVENT_WIFI_SET (NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT | \
-                                    NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
+        NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
 #define NET_MGMT_EVENT_IP_SET (NET_EVENT_IPV4_ADDR_ADD)
 #define NET_MGMT_EVENT_IF_SET (NET_EVENT_IF_UP | NET_EVENT_IF_DOWN)
 
@@ -62,17 +63,14 @@ const char wifi_psk[] = "";
 static int init_wifi(void);
 static int connect_wifi(void);
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
-						                     struct net_if *iface,
-						                     void *info, size_t info_length,
-						                     void *user_data);
+        struct net_if *iface,
+        void *info, size_t info_length,
+        void *user_data);
 static void handle_wifi_connect_result(struct wifi_status *status);
 static void handle_ipv4_result(struct net_if *iface);
 
-static int data_handler(struct http_client_ctx *client,
-					  enum http_data_status status,
-					  const struct http_request_ctx *request_ctx,
-					  struct http_response_ctx *response_ctx,
-					  void *user_data);
+static int start_http_server(void);
+static int http_rx_entry(void *p1, void *p2, void *p3);
 
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data);
 
@@ -88,52 +86,12 @@ K_EVENT_DEFINE(event);
 K_TIMER_DEFINE(heartbeat_toggle_timer, heartbeat_toggle_timeout_cb, NULL);
 K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
+static size_t resp_len = 0;
 static uint8_t resp_buffer[8192] = {0};
-struct http_resource_detail_dynamic server_data_resource_detail = {
-	.common = {
-			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
-			.type = HTTP_RESOURCE_TYPE_DYNAMIC,
-			.content_encoding = "json",
-			.content_type = "application/json",
-		},
-    .cb = &data_handler,
-    .user_data = NULL,
-};
+static uint16_t http_server_port = 80;
+K_THREAD_DEFINE(http_rx, 8192, http_rx_entry, NULL, NULL, NULL, -5, 0, -1);
 
-
-static uint16_t http_service_port = 80;
-
-HTTP_SERVICE_DEFINE(http_service, "", &http_service_port, 1,
-		    10, NULL, NULL);
-
-HTTP_RESOURCE_DEFINE(p1_data_resource, http_service, "/data",
-		     &server_data_resource_detail);
-
-static const struct json_obj_descr json_tariff_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_DOUBLE_FP), 
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_DOUBLE_FP),
-};
-
-static const struct json_obj_descr json_phase_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct phase, voltage, JSON_TOK_FLOAT_FP),
-    JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_sags, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_PRIM(struct phase, nr_voltage_swells, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_PRIM(struct phase, current, JSON_TOK_NUMBER),
-};
-
-static const struct json_obj_descr json_telegram_descr[] = {
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, version, JSON_TOK_NUMBER),
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, timestamp, JSON_TOK_NUMBER),
-    // FIXME: string buffer causes crash during encoding
-	// JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, equipment_id, JSON_TOK_STRING), 
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, device_type, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_to_client, json_tariff_descr),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_by_client, json_tariff_descr),
-    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, tarrif_indicator, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl1, json_phase_descr),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl2, json_phase_descr),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl3, json_phase_descr),
-};
+static int http_sock = 0;
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET, net_mgmt_event_static_handler_cb, NULL);
 NET_MGMT_REGISTER_EVENT_HANDLER(ip_net_mgmt_cb, NET_MGMT_EVENT_IP_SET, net_mgmt_event_static_handler_cb, NULL);
@@ -168,7 +126,7 @@ int main(void) {
     if (ret < 0) {
         return ret;
     }
-    http_server_start();
+    start_http_server();
 
     dsmr_p1_set_callback(&p1_telegram_received_cb, NULL);
     dsmr_p1_enable();
@@ -248,7 +206,7 @@ static int connect_wifi(void) {
     LOG_INF("Connecting to SSID: %s", wifi_params.ssid);
 
     ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &wifi_params,
-                 sizeof(struct wifi_connect_req_params));
+            sizeof(struct wifi_connect_req_params));
     if (ret) {
         LOG_ERR("WiFi Connection Request Failed: %d", ret);
         return ret;
@@ -257,47 +215,48 @@ static int connect_wifi(void) {
 }
 
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
-						                     struct net_if *iface,
-						                     void *info, size_t info_length,
-						                     void *user_data) {
+        struct net_if *iface,
+        void *info, size_t info_length,
+        void *user_data) {
     switch (mgmt_event) {
-    case NET_EVENT_IF_UP:
-        LOG_INF("if up");
-        break;
+        case NET_EVENT_IF_UP:
+            LOG_INF("if up");
+            break;
 
-    case NET_EVENT_IF_DOWN:
-        LOG_INF("if down");
-        break;
+        case NET_EVENT_IF_DOWN:
+            LOG_INF("if down");
+            break;
 
-    case NET_EVENT_WIFI_CONNECT_RESULT:
-        LOG_INF("wifi connect result");
-        handle_wifi_connect_result((struct wifi_status *)info);
-        break;
+        case NET_EVENT_WIFI_CONNECT_RESULT:
+            LOG_INF("wifi connect result");
+            handle_wifi_connect_result((struct wifi_status *)info);
+            break;
 
-    case NET_EVENT_WIFI_DISCONNECT_RESULT:
-        // Start AP mode and the provisioning http server
-        LOG_WRN("wifi disconnected");
-        k_event_post(&event, EVENT_FLAG_CONNECT_WIFI);
-        break;
+        case NET_EVENT_WIFI_DISCONNECT_RESULT:
+            // Start AP mode and the provisioning http server
+            LOG_WRN("wifi disconnected");
+            k_event_post(&event, EVENT_FLAG_CONNECT_WIFI);
+            break;
 
-    case NET_EVENT_IPV4_ADDR_ADD:
-        handle_ipv4_result(iface);
-        break;
+        case NET_EVENT_IPV4_ADDR_ADD:
+            handle_ipv4_result(iface);
+            break;
 
-    case NET_EVENT_WIFI_SCAN_RESULT:
-        const struct wifi_scan_result *scan_result = info;
-        if (scan_result->rssi > -80) {
-            LOG_INF("scanned: %d, %s, %d, %d", scan_result->rssi, scan_result->ssid,
-                    scan_result->band, scan_result->channel);
-        }
-        break;
-    case NET_EVENT_WIFI_SCAN_DONE:
-        LOG_INF("scan done");
-        k_sem_give(&scan_done_sem);
-        break;
+        case NET_EVENT_WIFI_SCAN_RESULT: {
+                                             const struct wifi_scan_result *scan_result = info;
+                                             if (scan_result->rssi > -80) {
+                                                 LOG_INF("scanned: %d, %s, %d, %d", scan_result->rssi, scan_result->ssid,
+                                                         scan_result->band, scan_result->channel);
+                                             }
+                                             break;
+                                         }
+        case NET_EVENT_WIFI_SCAN_DONE:
+                                         LOG_INF("scan done");
+                                         k_sem_give(&scan_done_sem);
+                                         break;
 
-    default:
-        break;
+        default:
+                                         break;
     }
 }
 
@@ -326,54 +285,69 @@ static void handle_ipv4_result(struct net_if *iface) {
                     buf, sizeof(buf)));
         LOG_INF("Subnet: %s",
                 net_addr_ntop(AF_INET, &iface->config.ip.ipv4->unicast[i].netmask, buf,
-                              sizeof(buf)));
+                    sizeof(buf)));
         LOG_INF("Router: %s",
                 net_addr_ntop(AF_INET, &iface->config.ip.ipv4->gw, buf,
-                              sizeof(buf)));
+                    sizeof(buf)));
         LOG_INF("IP: %s", net_addr_ntop(AF_INET, 
-                                        &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr, 
-                                        buf, sizeof(buf)));
+                    &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr, 
+                    buf, sizeof(buf)));
     }
 
     has_ip_address = true;
 }
 
-static int data_handler(struct http_client_ctx *client,
-					  enum http_data_status status,
-					  const struct http_request_ctx *request_ctx,
-					  struct http_response_ctx *response_ctx,
-					  void *user_data) {
-	int err;
-    struct dsmr_p1_telegram telegram = last_telegram; // avoid data changing over course of encoding
-    response_ctx->final_chunk = (status == HTTP_SERVER_DATA_FINAL);
-    response_ctx->body = NULL;
-    response_ctx->body_len = 0;
+static int start_http_server(void) {
+    int ret;
+    struct sockaddr_in6 addr;
 
-    LOG_INF("http request received");
-    if (status == HTTP_SERVER_DATA_ABORTED) {
-		LOG_DBG("Transaction aborted.");
-		return 0;
-	}
+    memset(&addr, 0, sizeof(addr));
+    addr.sin6_family = AF_INET6;
+    addr.sin6_port = htons(http_server_port);
 
-    if (!has_data) {
-        response_ctx->status = HTTP_200_OK;
-        strcpy(resp_buffer, "{}");
-        response_ctx->body = resp_buffer;
-        response_ctx->body_len = strlen(resp_buffer);
-        return 0;
+    http_sock = zsock_socket(addr.sin6_family, SOCK_DGRAM, IPPROTO_UDP);
+    if (http_sock < 0) {
+        LOG_ERR("could not get coap server socket: %s", strerror(errno));
+        return -errno;
     }
 
-    err = json_obj_encode_buf(json_telegram_descr, ARRAY_SIZE(json_telegram_descr), &telegram, resp_buffer,
-				   sizeof(resp_buffer));
-    if (err < 0) {
-        LOG_ERR("could not encode json: %d", err);
-        response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
-        return -ENOMEM;
+    ret = zsock_bind(http_sock, (struct sockaddr *)&addr, sizeof(addr));
+    if (ret < 0) {
+        LOG_ERR("could not bind coap server socket: %s", strerror(errno));
+        return -errno;
     }
-    response_ctx->status = HTTP_200_OK;
-    response_ctx->body = resp_buffer;
-    response_ctx->body_len = strlen(resp_buffer);
+
+    k_thread_start(http_rx);
     return 0;
+}
+
+static int http_rx_entry(void *p1, void *p2, void *p3) {
+    int ret = 0;
+    int recv_len;
+    struct sockaddr addr;
+    socklen_t addr_len;
+    uint8_t recv_data[1024];
+
+    do {
+        addr_len = sizeof(addr);
+        recv_len = zsock_recvfrom(http_sock, recv_data, sizeof(recv_data), 0,
+                &addr, &addr_len);
+        if (recv_len < 0) {
+            LOG_ERR("connection error %d", errno);
+            return -errno;
+        }
+        LOG_HEXDUMP_INF(recv_data, recv_len, "data received: ");
+
+      struct http_parser parser = {0};
+      struct http_parser_settings settings = {0};
+      http_parser_init(&parser, HTTP_REQUEST);
+      http_parser_settings_init(&settings);
+      http_parser_execute(&parser, &settings, recv_data, recv_len);
+
+      // handle http
+    } while (true);
+
+    return ret;
 }
 
 static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data) {

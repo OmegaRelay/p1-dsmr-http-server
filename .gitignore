@@ -51,8 +51,12 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+third*party/
 build/
+compile_commands.json
 .DS_store/
 external/
 .venv/
-.west/
+.cache/
+
+local/
