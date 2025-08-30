@@ -2,9 +2,9 @@
 #ifndef _DSMR_P1_INCLUDE_DSMR_PLATFORM_H__
 #define _DSMR_P1_INCLUDE_DSMR_PLATFORM_H__
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 typedef enum platform_log_level {
     PLATFORM_LOG_NONE,

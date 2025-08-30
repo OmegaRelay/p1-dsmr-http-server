@@ -2,16 +2,16 @@
  * @file dsmr_p1.h
  * @author Theis <theismejnertsen@gmail.com>
  * @date 08-03-2025
- * 
+ *
  * @brief Interface functions for the dsmr p1 module
- * 
+ *
  */
 
 #ifndef _DSMR_P1_INCLUDE_DSMR_P1_H__
 #define _DSMR_P1_INCLUDE_DSMR_P1_H__
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 
 #define DSMR_P1_TELEGRAM_MAX_SIZE 1024
@@ -47,7 +47,8 @@ struct dsmr_p1_telegram {
     struct phase pl3;
 };
 
-typedef void (*dsmr_p1_telegram_received_callback_t)(struct dsmr_p1_telegram telegram, void *user_data);
+typedef void (*dsmr_p1_telegram_received_callback_t)(
+    struct dsmr_p1_telegram telegram, void *user_data);
 
 int dsmr_p1_init(void);
 
@@ -55,6 +56,7 @@ int dsmr_p1_enable(void);
 
 int dsmr_p1_disable(void);
 
-int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t cb, void *user_data);
+int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t cb,
+                         void *user_data);
 
 #endif // _DSMR_P1_INCLUDE_DSMR_P1_H__

@@ -2,21 +2,20 @@
  * @file main.c
  * @author Theis <theismejnertsen@gmail.com>
  * @date 22-03-2025
- * 
- * @brief 
- * 
+ *
+ * @brief
+ *
  */
-
 
 /*******************************************************************************
  * Includes
  ******************************************************************************/
 
 #include <dsmr_p1/dsmr_p1.h>
-#include <zephyr/logging/log.h>
+#include <zephyr/data/json.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/data/json.h>
+#include <zephyr/logging/log.h>
 
 #include <zephyr/net/http/server.h>
 #include <zephyr/net/http/service.h>
@@ -30,15 +29,15 @@
 
 #include <zephyr/kernel.h>
 
-
 /*******************************************************************************
  * Constants
  ******************************************************************************/
 
 LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
 
-#define NET_MGMT_EVENT_WIFI_SET (NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT | \
-                                    NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
+#define NET_MGMT_EVENT_WIFI_SET                                                \
+    (NET_EVENT_WIFI_CONNECT_RESULT | NET_EVENT_WIFI_DISCONNECT_RESULT |        \
+     NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
 #define NET_MGMT_EVENT_IP_SET (NET_EVENT_IPV4_ADDR_ADD)
 #define NET_MGMT_EVENT_IF_SET (NET_EVENT_IF_UP | NET_EVENT_IF_DOWN)
 
@@ -54,7 +53,6 @@ const struct gpio_dt_spec led_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 const char wifi_ssid[] = "";
 const char wifi_psk[] = "";
 
-
 /*******************************************************************************
  * Local Function Prototypes
  ******************************************************************************/
@@ -62,23 +60,23 @@ const char wifi_psk[] = "";
 static int init_wifi(void);
 static int connect_wifi(void);
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
-						                     struct net_if *iface,
-						                     void *info, size_t info_length,
-						                     void *user_data);
+                                             struct net_if *iface, void *info,
+                                             size_t info_length,
+                                             void *user_data);
 static void handle_wifi_connect_result(struct wifi_status *status);
 static void handle_ipv4_result(struct net_if *iface);
 
 static int data_handler(struct http_client_ctx *client,
-					  enum http_data_status status,
-					  const struct http_request_ctx *request_ctx,
-					  struct http_response_ctx *response_ctx,
-					  void *user_data);
+                        enum http_data_status status,
+                        const struct http_request_ctx *request_ctx,
+                        struct http_response_ctx *response_ctx,
+                        void *user_data);
 
-static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data);
+static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram,
+                                    void *user_data);
 
 static void heartbeat_toggle_timeout_cb(struct k_timer *timer);
 static void wifi_reconnect_timeout_cb(struct k_timer *timer);
-
 
 /*******************************************************************************
  * Local Variables
@@ -90,27 +88,26 @@ K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
 static uint8_t resp_buffer[8192] = {0};
 struct http_resource_detail_dynamic server_data_resource_detail = {
-	.common = {
-			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
-			.type = HTTP_RESOURCE_TYPE_DYNAMIC,
-			.content_encoding = "json",
-			.content_type = "application/json",
-		},
+    .common =
+        {
+            .bitmask_of_supported_http_methods = BIT(HTTP_GET),
+            .type = HTTP_RESOURCE_TYPE_DYNAMIC,
+            .content_encoding = "json",
+            .content_type = "application/json",
+        },
     .cb = &data_handler,
     .user_data = NULL,
 };
 
-
 static uint16_t http_service_port = 80;
 
-HTTP_SERVICE_DEFINE(http_service, "", &http_service_port, 1,
-		    10, NULL, NULL);
+HTTP_SERVICE_DEFINE(http_service, "", &http_service_port, 1, 10, NULL, NULL);
 
 HTTP_RESOURCE_DEFINE(p1_data_resource, http_service, "/data",
-		     &server_data_resource_detail);
+                     &server_data_resource_detail);
 
 static const struct json_obj_descr json_tariff_descr[] = {
-    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_DOUBLE_FP), 
+    JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_1, JSON_TOK_DOUBLE_FP),
     JSON_OBJ_DESCR_PRIM(struct tarrif, tarrif_2, JSON_TOK_DOUBLE_FP),
 };
 
@@ -122,29 +119,35 @@ static const struct json_obj_descr json_phase_descr[] = {
 };
 
 static const struct json_obj_descr json_telegram_descr[] = {
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, version, JSON_TOK_NUMBER),
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, timestamp, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, version, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, timestamp, JSON_TOK_NUMBER),
     // FIXME: string buffer causes crash during encoding
-	// JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, equipment_id, JSON_TOK_STRING), 
-	JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, device_type, JSON_TOK_NUMBER),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_to_client, json_tariff_descr),
-    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_by_client, json_tariff_descr),
-    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, tarrif_indicator, JSON_TOK_NUMBER),
+    // JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, equipment_id,
+    // JSON_TOK_STRING),
+    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, device_type, JSON_TOK_NUMBER),
+    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_to_client,
+                          json_tariff_descr),
+    JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, elec_by_client,
+                          json_tariff_descr),
+    JSON_OBJ_DESCR_PRIM(struct dsmr_p1_telegram, tarrif_indicator,
+                        JSON_TOK_NUMBER),
     JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl1, json_phase_descr),
     JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl2, json_phase_descr),
     JSON_OBJ_DESCR_OBJECT(struct dsmr_p1_telegram, pl3, json_phase_descr),
 };
 
-NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET, net_mgmt_event_static_handler_cb, NULL);
-NET_MGMT_REGISTER_EVENT_HANDLER(ip_net_mgmt_cb, NET_MGMT_EVENT_IP_SET, net_mgmt_event_static_handler_cb, NULL);
-NET_MGMT_REGISTER_EVENT_HANDLER(if_net_mgmt_cb, NET_MGMT_EVENT_IF_SET, net_mgmt_event_static_handler_cb, NULL);
+NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
+                                net_mgmt_event_static_handler_cb, NULL);
+NET_MGMT_REGISTER_EVENT_HANDLER(ip_net_mgmt_cb, NET_MGMT_EVENT_IP_SET,
+                                net_mgmt_event_static_handler_cb, NULL);
+NET_MGMT_REGISTER_EVENT_HANDLER(if_net_mgmt_cb, NET_MGMT_EVENT_IF_SET,
+                                net_mgmt_event_static_handler_cb, NULL);
 
 K_SEM_DEFINE(scan_done_sem, 0, 1);
 
 static bool has_ip_address = false;
 static struct dsmr_p1_telegram last_telegram;
 static bool has_data = false;
-
 
 /*******************************************************************************
  * Public Function Implementation
@@ -181,7 +184,8 @@ int main(void) {
         events = k_event_wait(&event, EVENT_FLAGS, false, K_FOREVER);
         if ((events & EVENT_FLAG_HEARTBEAT) == EVENT_FLAG_HEARTBEAT) {
             gpio_pin_toggle_dt(&led_gpio);
-            k_timer_start(&heartbeat_toggle_timer, HEARTBEAT_TOGGLE_PERIOD, K_FOREVER);
+            k_timer_start(&heartbeat_toggle_timer, HEARTBEAT_TOGGLE_PERIOD,
+                          K_FOREVER);
         }
         if (events & EVENT_FLAG_CONNECT_WIFI) {
             ret = connect_wifi();
@@ -195,7 +199,6 @@ int main(void) {
 
     return 0;
 }
-
 
 /*******************************************************************************
  * Local Function Implementation
@@ -227,7 +230,7 @@ static int init_wifi(void) {
 
 static int connect_wifi(void) {
     int ret = 0;
-    
+
     struct net_if *iface = net_if_get_first_wifi();
     if (iface == NULL) {
         LOG_ERR("could not get default interface");
@@ -248,7 +251,7 @@ static int connect_wifi(void) {
     LOG_INF("Connecting to SSID: %s", wifi_params.ssid);
 
     ret = net_mgmt(NET_REQUEST_WIFI_CONNECT, iface, &wifi_params,
-                 sizeof(struct wifi_connect_req_params));
+                   sizeof(struct wifi_connect_req_params));
     if (ret) {
         LOG_ERR("WiFi Connection Request Failed: %d", ret);
         return ret;
@@ -257,9 +260,9 @@ static int connect_wifi(void) {
 }
 
 static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
-						                     struct net_if *iface,
-						                     void *info, size_t info_length,
-						                     void *user_data) {
+                                             struct net_if *iface, void *info,
+                                             size_t info_length,
+                                             void *user_data) {
     switch (mgmt_event) {
     case NET_EVENT_IF_UP:
         LOG_INF("if up");
@@ -287,8 +290,8 @@ static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
     case NET_EVENT_WIFI_SCAN_RESULT:
         const struct wifi_scan_result *scan_result = info;
         if (scan_result->rssi > -80) {
-            LOG_INF("scanned: %d, %s, %d, %d", scan_result->rssi, scan_result->ssid,
-                    scan_result->band, scan_result->channel);
+            LOG_INF("scanned: %d, %s, %d, %d", scan_result->rssi,
+                    scan_result->ssid, scan_result->band, scan_result->channel);
         }
         break;
     case NET_EVENT_WIFI_SCAN_DONE:
@@ -313,7 +316,6 @@ static void handle_ipv4_result(struct net_if *iface) {
     int i = 0;
 
     for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
-
         char buf[NET_IPV4_ADDR_LEN];
 
         if (iface->config.ip.ipv4->unicast[i].ipv4.addr_type != NET_ADDR_DHCP) {
@@ -322,38 +324,42 @@ static void handle_ipv4_result(struct net_if *iface) {
 
         LOG_INF("IPv4 address: %s",
                 net_addr_ntop(
-                    AF_INET, &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
+                    AF_INET,
+                    &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
                     buf, sizeof(buf)));
         LOG_INF("Subnet: %s",
-                net_addr_ntop(AF_INET, &iface->config.ip.ipv4->unicast[i].netmask, buf,
+                net_addr_ntop(AF_INET,
+                              &iface->config.ip.ipv4->unicast[i].netmask, buf,
                               sizeof(buf)));
-        LOG_INF("Router: %s",
-                net_addr_ntop(AF_INET, &iface->config.ip.ipv4->gw, buf,
-                              sizeof(buf)));
-        LOG_INF("IP: %s", net_addr_ntop(AF_INET, 
-                                        &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr, 
-                                        buf, sizeof(buf)));
+        LOG_INF("Router: %s", net_addr_ntop(AF_INET, &iface->config.ip.ipv4->gw,
+                                            buf, sizeof(buf)));
+        LOG_INF("IP: %s",
+                net_addr_ntop(
+                    AF_INET,
+                    &iface->config.ip.ipv4->unicast[i].ipv4.address.in_addr,
+                    buf, sizeof(buf)));
     }
 
     has_ip_address = true;
 }
 
 static int data_handler(struct http_client_ctx *client,
-					  enum http_data_status status,
-					  const struct http_request_ctx *request_ctx,
-					  struct http_response_ctx *response_ctx,
-					  void *user_data) {
-	int err;
-    struct dsmr_p1_telegram telegram = last_telegram; // avoid data changing over course of encoding
+                        enum http_data_status status,
+                        const struct http_request_ctx *request_ctx,
+                        struct http_response_ctx *response_ctx,
+                        void *user_data) {
+    int err;
+    struct dsmr_p1_telegram telegram =
+        last_telegram; // avoid data changing over course of encoding
     response_ctx->final_chunk = (status == HTTP_SERVER_DATA_FINAL);
     response_ctx->body = NULL;
     response_ctx->body_len = 0;
 
     LOG_INF("http request received");
     if (status == HTTP_SERVER_DATA_ABORTED) {
-		LOG_DBG("Transaction aborted.");
-		return 0;
-	}
+        LOG_DBG("Transaction aborted.");
+        return 0;
+    }
 
     if (!has_data) {
         response_ctx->status = HTTP_200_OK;
@@ -363,8 +369,9 @@ static int data_handler(struct http_client_ctx *client,
         return 0;
     }
 
-    err = json_obj_encode_buf(json_telegram_descr, ARRAY_SIZE(json_telegram_descr), &telegram, resp_buffer,
-				   sizeof(resp_buffer));
+    err = json_obj_encode_buf(json_telegram_descr,
+                              ARRAY_SIZE(json_telegram_descr), &telegram,
+                              resp_buffer, sizeof(resp_buffer));
     if (err < 0) {
         LOG_ERR("could not encode json: %d", err);
         response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
@@ -376,7 +383,8 @@ static int data_handler(struct http_client_ctx *client,
     return 0;
 }
 
-static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram, void *user_data) {
+static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram,
+                                    void *user_data) {
     ARG_UNUSED(user_data);
     LOG_INF("p1 telegram received");
     last_telegram = telegram;
