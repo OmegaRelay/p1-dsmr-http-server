@@ -1,0 +1,10 @@
+[manifest]
+path = app
+file = west.yml
+
+[zephyr]
+base = third-party/zephyr
+
+[build]
+dir-fmt = build/{board}/{app}
+
