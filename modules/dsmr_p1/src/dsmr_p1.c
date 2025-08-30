@@ -50,6 +50,10 @@ int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t a_cb,
     return 0;
 }
 
+struct dsmr_p1_telegram dsmr_p1_parse_telegram(uint8_t *data, size_t len) {
+    return parse_p1_telegram(data, len);
+}
+
 /******************************************************************************
  * Local Function Implementation
  *****************************************************************************/
@@ -78,8 +82,7 @@ static void telegram_received_cb(uint8_t *data, size_t len) {
     }
     platform_log(PLATFORM_LOG_DEBUG, "crc ok");
 
-    struct dsmr_p1_telegram telegram = parse_p1_telegram(data, len);
-    user_cb(telegram, user_data);
+    user_cb(data, len, user_data);
 }
 
 /**

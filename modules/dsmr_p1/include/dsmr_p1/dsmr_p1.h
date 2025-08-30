@@ -48,7 +48,7 @@ struct dsmr_p1_telegram {
 };
 
 typedef void (*dsmr_p1_telegram_received_callback_t)(
-    struct dsmr_p1_telegram telegram, void *user_data);
+    const uint8_t *data, size_t len, void *user_data);
 
 int dsmr_p1_init(void);
 
@@ -58,5 +58,7 @@ int dsmr_p1_disable(void);
 
 int dsmr_p1_set_callback(dsmr_p1_telegram_received_callback_t cb,
                          void *user_data);
+
+struct dsmr_p1_telegram dsmr_p1_parse_telegram(uint8_t *data, size_t len);
 
 #endif // _DSMR_P1_INCLUDE_DSMR_P1_H__

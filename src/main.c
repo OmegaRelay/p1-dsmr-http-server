@@ -72,7 +72,7 @@ static int data_handler(struct http_client_ctx *client,
                         struct http_response_ctx *response_ctx,
                         void *user_data);
 
-static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram,
+static void p1_telegram_received_cb(const uint8_t *data, size_t len,
                                     void *user_data);
 
 static void heartbeat_toggle_timeout_cb(struct k_timer *timer);
@@ -90,8 +90,8 @@ static uint8_t resp_buffer[8192] = {0};
 struct http_resource_detail_dynamic server_data_resource_detail = {
     .common =
         {
-            .bitmask_of_supported_http_methods = BIT(HTTP_GET),
             .type = HTTP_RESOURCE_TYPE_DYNAMIC,
+            .bitmask_of_supported_http_methods = BIT(HTTP_GET),
             .content_encoding = "json",
             .content_type = "application/json",
         },
@@ -146,8 +146,8 @@ NET_MGMT_REGISTER_EVENT_HANDLER(if_net_mgmt_cb, NET_MGMT_EVENT_IF_SET,
 K_SEM_DEFINE(scan_done_sem, 0, 1);
 
 static bool has_ip_address = false;
-static struct dsmr_p1_telegram last_telegram;
-static bool has_data = false;
+static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
+static size_t telegram_len = 0;
 
 /*******************************************************************************
  * Public Function Implementation
@@ -349,46 +349,57 @@ static int data_handler(struct http_client_ctx *client,
                         struct http_response_ctx *response_ctx,
                         void *user_data) {
     int err;
-    struct dsmr_p1_telegram telegram =
-        last_telegram; // avoid data changing over course of encoding
+    size_t resp_len = 0;
     response_ctx->final_chunk = (status == HTTP_SERVER_DATA_FINAL);
     response_ctx->body = NULL;
     response_ctx->body_len = 0;
 
-    LOG_INF("http request received");
+    LOG_INF("http request %s received", client->content_type);
     if (status == HTTP_SERVER_DATA_ABORTED) {
         LOG_DBG("Transaction aborted.");
         return 0;
     }
 
-    if (!has_data) {
-        response_ctx->status = HTTP_200_OK;
-        strcpy(resp_buffer, "{}");
-        response_ctx->body = resp_buffer;
-        response_ctx->body_len = strlen(resp_buffer);
+    if (strncmp(client->content_type, "application/json", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
+        if (telegram_len == 0) {
+            response_ctx->status = HTTP_200_OK;
+            strcpy(resp_buffer, "{}");
+        } else {
+            // avoid data changing over course of encoding
+            uint8_t data[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
+            memcpy(data, last_telegram, sizeof(data));
+            struct dsmr_p1_telegram telegram = dsmr_p1_parse_telegram(data, telegram_len);
+            err = json_obj_encode_buf(json_telegram_descr,
+                                    ARRAY_SIZE(json_telegram_descr), &telegram,
+                                    resp_buffer, sizeof(resp_buffer));
+            if (err < 0) {
+                LOG_ERR("could not encode json: %d", err);
+                response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
+                return -ENOMEM;
+            }
+            resp_len = strlen(resp_buffer);
+        }
+    } else if (strncmp(client->content_type, "", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0 || strncmp(client->content_type, "text/plain", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
+        memcpy(resp_buffer, last_telegram, telegram_len);
+        resp_len = telegram_len;
+    } else {
+        LOG_ERR("unsupported media type: %s", client->content_type);
+        response_ctx->status = HTTP_415_UNSUPPORTED_MEDIA_TYPE;
         return 0;
     }
 
-    err = json_obj_encode_buf(json_telegram_descr,
-                              ARRAY_SIZE(json_telegram_descr), &telegram,
-                              resp_buffer, sizeof(resp_buffer));
-    if (err < 0) {
-        LOG_ERR("could not encode json: %d", err);
-        response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
-        return -ENOMEM;
-    }
     response_ctx->status = HTTP_200_OK;
     response_ctx->body = resp_buffer;
-    response_ctx->body_len = strlen(resp_buffer);
+    response_ctx->body_len = resp_len;
     return 0;
 }
 
-static void p1_telegram_received_cb(struct dsmr_p1_telegram telegram,
+static void p1_telegram_received_cb(const uint8_t *data, size_t len,
                                     void *user_data) {
     ARG_UNUSED(user_data);
     LOG_INF("p1 telegram received");
-    last_telegram = telegram;
-    has_data = true;
+    memcpy(last_telegram, data, MIN(sizeof(last_telegram), len));
+    telegram_len = len;
 }
 
 static void heartbeat_toggle_timeout_cb(struct k_timer *timer) {
