@@ -128,7 +128,7 @@ SYS_INIT(module_init, POST_KERNEL, 90);
  *****************************************************************************/
 
 static void module_init(void) {
-    return dsmr_p1_init(NULL);
+    return dsmr_p1_init();
 }
 
 static void uart_irq_cb(const struct device *uart_dev, void *user_data) {
