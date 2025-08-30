@@ -41,8 +41,11 @@
 *.su
 *.idb
 *.pdb
-.cache/
 compile_commands.json
+
+# Caching
+.cache/
+__pycache__/
 
 # Kernel Module Compile Results
 *.mod*
@@ -53,7 +56,7 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# Third Party dependancies
+# Third Party dependencies
 external/
 third-party/
 
