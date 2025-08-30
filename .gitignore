@@ -41,6 +41,8 @@
 *.su
 *.idb
 *.pdb
+.cache/
+compile_commands.json
 
 # Kernel Module Compile Results
 *.mod*
@@ -51,8 +53,15 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-build/
-.DS_store/
+# Third Party dependancies
 external/
+third-party/
+
+# Local Directories
 .venv/
-.west/
+/local/
+build/
+
+# OS Meta Data
+.DS_store/
+
