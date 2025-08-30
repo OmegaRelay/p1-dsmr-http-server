@@ -111,8 +111,6 @@ static struct dsmr_p1_telegram parse_p1_telegram(uint8_t *telegram,
                                                  size_t telegram_len) {
     struct dsmr_p1_telegram ret = {0};
 
-    size_t len = 0;
-
     char *token, *next_token = telegram;
     while (next_token < (char *)(telegram + telegram_len)) {
         char *saveptr;
@@ -141,7 +139,6 @@ static void parse_cosem_object(struct dsmr_p1_telegram *telegram, char *cosem,
     platform_log(PLATFORM_LOG_DEBUG, "cosem object: %s", cosem);
     platform_log(PLATFORM_LOG_DEBUG, "parsing cosem object %p, %s", obis_code,
                  obis_code);
-    struct obis_code code;
     char *value = strtok_r(NULL, obis_delim, &saveptr);
     if (value == NULL) {
         return;

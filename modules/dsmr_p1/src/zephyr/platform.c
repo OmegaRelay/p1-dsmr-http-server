@@ -33,7 +33,7 @@ const struct gpio_dt_spec data_req_gpio =
  * Local Function Prototypes
  *****************************************************************************/
 
-static void module_init(void);
+static int module_init(void);
 static void uart_irq_cb(const struct device *uart, void *user_data);
 static void thread_entry(void *p1, void *p2, void *p3);
 static int log_translate(platform_log_level_t log_level);
@@ -125,7 +125,7 @@ SYS_INIT(module_init, POST_KERNEL, 90);
  * Local Function Implementation
  *****************************************************************************/
 
-static void module_init(void) { return dsmr_p1_init(); }
+static int module_init(void) { return dsmr_p1_init(); }
 
 static void uart_irq_cb(const struct device *uart_dev, void *user_data) {
     if (!uart_irq_update(uart_dev)) {
