@@ -13,7 +13,7 @@ manifest:
     - name: zephyr
       repo-path: zephyr
       remote: zephyr-rtos
-      revision: d453fb94075c5d107f521f8a1ebaf85f3ead32d7
+      revision: v4.2.0
       import:
         name-allowlist:
           - zephyr 

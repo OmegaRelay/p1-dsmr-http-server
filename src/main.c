@@ -59,7 +59,7 @@ const char wifi_psk[] = "";
 
 static int init_wifi(void);
 static int connect_wifi(void);
-static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
+static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
                                              struct net_if *iface, void *info,
                                              size_t info_length,
                                              void *user_data);
@@ -259,7 +259,7 @@ static int connect_wifi(void) {
     return 0;
 }
 
-static void net_mgmt_event_static_handler_cb(uint32_t mgmt_event,
+static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
                                              struct net_if *iface, void *info,
                                              size_t info_length,
                                              void *user_data) {
