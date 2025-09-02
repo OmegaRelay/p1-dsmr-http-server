@@ -14,9 +14,9 @@ There are a few methods to get started but all require installing west as the fi
 ```bash
 mkdir p1-dsmr-http-server && cd p1-dsmr-http-server
 ```
- - Clone the repo as application.
+ - Clone the repo as application and `cd` into it.
 ```bash
-git clone https://gitlab.com/OmegaRelay/p1-dsmr-http-server.git application
+git clone https://gitlab.com/OmegaRelay/p1-dsmr-http-server.git application && cd application
 ```
  - Initialise the west workspace.
 ```bash
@@ -28,11 +28,15 @@ west update
 ```
 
 ### Pull the West manifest
- - Create and initialise a west workspace from the application manifest.
+ - Create and initialise a west workspace from the application manifest. This will create the workspace and pull the application into it.
 ```bash
 west init -m https://gitlab.com/OmegaRelay/p1-dsmr-http-server p1-dsmr-http-server 
 ```
- - Update dependancies
+ - `cd` into the application directory.
+```bash
+cd p1-dsmr-http-server/p1-dsmr-http-server
+```
+ - Update dependancies.
 ```bash
 west update
 ```
