@@ -128,39 +128,45 @@ SYS_INIT(module_init, POST_KERNEL, 90);
 static int module_init(void) { return dsmr_p1_init(); }
 
 static void uart_irq_cb(const struct device *uart_dev, void *user_data) {
+    int ret = 0;
+
     if (!uart_irq_update(uart_dev)) {
         LOG_DBG("Unable to process interrupts");
         return;
     }
 
-    if (!uart_irq_rx_ready(uart_dev)) {
-        LOG_DBG("No RX data");
-        return;
-    }
+    while (uart_irq_rx_ready(uart_dev)) {
+        ret = uart_fifo_read(uart_dev, rx_buf + rx_offset, 1);
+        if (ret < 0) {
+            LOG_ERR("failed to read uart fifo (%d)", ret);
+            rx_offset = 0;
+            return;
+        };
 
-    int ret = uart_fifo_read(uart_dev, rx_buf + rx_offset, 1);
-    if (ret < 0) {
-        LOG_ERR("Failed to read UART FIFO (%d)", ret);
-        rx_offset = 0;
-        return;
-    };
-    if (rx_buf[0] != '/') {
-        rx_offset = 0;
-        return;
-    }
+        // All telegrams must start with a '/'
+        if (rx_buf[0] != '/') {
+            rx_offset = 0;
+            return;
+        }
 
-    rx_offset += ret;
-    if (rx_offset < DSMR_P1_TRAILER_LEN) {
-        return;
-    }
-    if (rx_offset >= sizeof(rx_buf)) {
-        rx_offset = 0;
-    }
-    if (rx_buf[rx_offset - DSMR_P1_TRAILER_LEN] == '!') {
-        uart_irq_rx_disable(uart_dev);
-        ring_buf_put(&rx_ring_buf, rx_buf, rx_offset);
-        k_sem_give(&data_ready_sem);
-        rx_offset = 0;
+        rx_offset += ret;
+        if (rx_offset < DSMR_P1_TRAILER_LEN) {
+            // Telegram is too small
+            return;
+        } else if (rx_offset >= sizeof(rx_buf)) {
+            // Telegram is too big
+            LOG_WRN("telegram too big");
+            rx_offset = 0;
+            return;
+        }
+        
+        // All telegrams must end with a '!'
+        if (rx_buf[rx_offset - DSMR_P1_TRAILER_LEN] == '!') {
+            uart_irq_rx_disable(uart_dev);
+            ring_buf_put(&rx_ring_buf, rx_buf, rx_offset);
+            k_sem_give(&data_ready_sem);
+            rx_offset = 0;
+        }
     }
 }
 
