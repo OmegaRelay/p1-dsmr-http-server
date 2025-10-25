@@ -49,9 +49,10 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
 
 const struct gpio_dt_spec led_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
-// TODO: move to dynamic config
-const char wifi_ssid[] = "";
-const char wifi_psk[] = "";
+#ifdef CONFIG_WIFI
+const char wifi_ssid[] = CONFIG_WIFI_SSID;
+const char wifi_psk[] = CONFIG_WIFI_PSK;
+#endif // CONFIG_WIFI
 
 /*******************************************************************************
  * Local Function Prototypes
@@ -169,6 +170,7 @@ int main(void) {
 
     ret = init_wifi();
     if (ret < 0) {
+        LOG_ERR("could not initialize wifi");
         return ret;
     }
     http_server_start();
@@ -205,6 +207,7 @@ int main(void) {
  ******************************************************************************/
 
 static int init_wifi(void) {
+#ifdef CONFIG_WIFI
     struct net_if *iface = net_if_get_first_wifi();
     if (iface == NULL) {
         LOG_ERR("could not get default interface");
@@ -224,11 +227,12 @@ static int init_wifi(void) {
         LOG_ERR("could not start wifi interface");
         return -ETIMEDOUT;
     }
-
+#endif // CONFIG_WIFI
     return 0;
 }
 
 static int connect_wifi(void) {
+#ifdef CONFIG_WIFI
     int ret = 0;
 
     struct net_if *iface = net_if_get_first_wifi();
@@ -256,6 +260,7 @@ static int connect_wifi(void) {
         LOG_ERR("WiFi Connection Request Failed: %d", ret);
         return ret;
     }
+#endif // CONFIG_WIFI
     return 0;
 }
 
@@ -287,13 +292,14 @@ static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
         handle_ipv4_result(iface);
         break;
 
-    case NET_EVENT_WIFI_SCAN_RESULT:
+    case NET_EVENT_WIFI_SCAN_RESULT: {
         const struct wifi_scan_result *scan_result = info;
         if (scan_result->rssi > -80) {
             LOG_INF("scanned: %d, %s, %d, %d", scan_result->rssi,
                     scan_result->ssid, scan_result->band, scan_result->channel);
         }
         break;
+    }
     case NET_EVENT_WIFI_SCAN_DONE:
         LOG_INF("scan done");
         k_sem_give(&scan_done_sem);
@@ -360,7 +366,8 @@ static int data_handler(struct http_client_ctx *client,
         return 0;
     }
 
-    if (strncmp(client->content_type, "application/json", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
+    if (strncmp(client->content_type, "application/json",
+                HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
         if (telegram_len == 0) {
             response_ctx->status = HTTP_200_OK;
             strcpy(resp_buffer, "{}");
@@ -368,10 +375,11 @@ static int data_handler(struct http_client_ctx *client,
             // avoid data changing over course of encoding
             uint8_t data[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
             memcpy(data, last_telegram, sizeof(data));
-            struct dsmr_p1_telegram telegram = dsmr_p1_parse_telegram(data, telegram_len);
-            err = json_obj_encode_buf(json_telegram_descr,
-                                    ARRAY_SIZE(json_telegram_descr), &telegram,
-                                    resp_buffer, sizeof(resp_buffer));
+            struct dsmr_p1_telegram telegram =
+                dsmr_p1_parse_telegram(data, telegram_len);
+            err = json_obj_encode_buf(
+                json_telegram_descr, ARRAY_SIZE(json_telegram_descr), &telegram,
+                resp_buffer, sizeof(resp_buffer));
             if (err < 0) {
                 LOG_ERR("could not encode json: %d", err);
                 response_ctx->status = HTTP_500_INTERNAL_SERVER_ERROR;
@@ -379,7 +387,10 @@ static int data_handler(struct http_client_ctx *client,
             }
             resp_len = strlen(resp_buffer);
         }
-    } else if (strncmp(client->content_type, "", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0 || strncmp(client->content_type, "text/plain", HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
+    } else if (strncmp(client->content_type, "",
+                       HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0 ||
+               strncmp(client->content_type, "text/plain",
+                       HTTP_SERVER_MAX_CONTENT_TYPE_LEN) == 0) {
         memcpy(resp_buffer, last_telegram, telegram_len);
         resp_len = telegram_len;
     } else {
