@@ -1,0 +1,21 @@
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu # "Zephyr Kernel"
+
+comment "P1 DSMR HTTP Server"
+
+config ENABLE_WIFI
+    bool "Enable WiFi for the Application"
+    select WIFI
+    select NET_L2_WIFI_MGMT
+
+if WIFI
+
+config WIFI_SSID
+    string "SSID of WiFi network"
+
+config WIFI_PSK
+    string "Pre-Shared Key of WiFi network"
+
+endif # WIFI
+
