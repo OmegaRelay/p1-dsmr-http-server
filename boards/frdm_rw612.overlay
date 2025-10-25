@@ -1,0 +1,11 @@
+
+/ {
+    chosen {
+        zephyr,p1-uart = &flexcomm0;
+    };
+};
+
+&flexcomm0 {
+    status = "okay";
+};
+
