@@ -17,5 +17,8 @@ config WIFI_SSID
 config WIFI_PSK
     string "Pre-Shared Key of WiFi network"
 
+config WIFI_NXP
+    default DT_HAS_NXP_WIFI_ENABLED
+
 endif # WIFI
 
