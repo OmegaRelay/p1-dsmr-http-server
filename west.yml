@@ -5,10 +5,6 @@ manifest:
   remotes:
     - name: zephyr-rtos
       url-base: https://github.com/zephyrproject-rtos
-    - name: nxp
-      url-base: https://github.com/NXP
-    - name: nxp-zsdk
-      url-base: https://github.com/nxp-zephyr
 
   defaults:
     remote: zephyr-rtos
@@ -22,18 +18,5 @@ manifest:
         name-allowlist:
           - zephyr 
           - mbedtls
-          - cmsis
-          - cmsis_6
-          - segger
-          - hal_nordic
           - hal_espressif
-          - hal_rpi_pico
-          - hal_nxp
 
-    - name: els_pkc
-      remote: nxp
-      repo-path: els_pkc
-      revision: 71d4a89c03fb32e618ee02c0cd54b3fc92736c96
-      path: modules/crypto/els_pkc
-      groups:
-        - crypto

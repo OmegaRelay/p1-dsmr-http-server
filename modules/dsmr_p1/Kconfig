@@ -19,4 +19,8 @@ config DSMR_P1_BUF_SIZE
     help
         This option sets the size of the static message buffer of the DSMR P1 library
 
+config DSMR_P1_THREAD_PRIORITY
+    int "Priority of the DSMR P1 Thread"
+    default 5
+
 endif # DSMR_P1

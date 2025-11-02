@@ -21,9 +21,7 @@
  * Constants
  *****************************************************************************/
 
-#define LOG_LEVEL CONFIG_DSMR_P1_LOG_LEVEL
-#define LOG_MODULE_NAME dmsr_p1_serial
-LOG_MODULE_REGISTER(LOG_MODULE_NAME);
+LOG_MODULE_REGISTER(dmsr_p1, CONFIG_DSMR_P1_LOG_LEVEL);
 
 const struct device *p1_uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_p1_uart));
 const struct gpio_dt_spec data_req_gpio =
@@ -79,7 +77,7 @@ int platform_init(data_received_callback_t cb) {
     telegram_received_cb = cb;
     k_thread_create(&dsmr_p1_rx_thread, dsmr_p1_rx_stack,
                     K_THREAD_STACK_SIZEOF(dsmr_p1_rx_stack), &thread_entry,
-                    NULL, NULL, NULL, 1, 0, K_NO_WAIT);
+                    NULL, NULL, NULL, CONFIG_DSMR_P1_THREAD_PRIORITY, 0, K_NO_WAIT);
     return 0;
 }
 
