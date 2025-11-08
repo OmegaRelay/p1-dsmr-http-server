@@ -30,19 +30,20 @@
      NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
 
 enum main_event {
-    MAIN_EVENT_LED_HEARTBEAT = BIT(0),
+    MAIN_EVENT_DSMR_TELEGRAM_RECEIVED = BIT(0),
     MAIN_EVENT_WIFI_RECONNECT = BIT(1),
 };
 
-#define HEARTBEAT_TOGGLE_PERIOD K_MSEC(500)
+#define LED_ON_TIME K_MSEC(100)
 
-static const struct gpio_dt_spec led_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec led_gpio =
+    GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 /******************************************************************************
  * Private Function Prototypes
  *****************************************************************************/
 
-static void heartbeat_timeout_cb(struct k_timer *timer);
+static void led_disable_timeout_cb(struct k_timer *timer);
 
 static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
                                              struct net_if *iface, void *info,
@@ -69,7 +70,7 @@ LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
 
 K_EVENT_DEFINE(main_event);
 
-K_TIMER_DEFINE(heartbeat_toggle_timer, heartbeat_timeout_cb, NULL);
+K_TIMER_DEFINE(led_disable_timer, led_disable_timeout_cb, NULL);
 K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
@@ -79,7 +80,6 @@ static size_t last_telegram_len = 0;
 static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
 uint8_t data_buf[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
 K_MUTEX_DEFINE(telegram_mu);
-
 
 /******************************************************************************
  * Public Functions
@@ -91,7 +91,7 @@ int main(void) {
         LOG_ERR("led0 is not ready");
         return -EIO;
     }
-    ret = gpio_pin_configure_dt(&led_gpio, GPIO_OUTPUT_INACTIVE);
+    ret = gpio_pin_configure_dt(&led_gpio, GPIO_OUTPUT_ACTIVE);
     if (ret < 0) {
         LOG_ERR("could not configure led0: %d", ret);
         return ret;
@@ -113,13 +113,11 @@ int main(void) {
     }
 
     uint32_t events;
-    k_timer_start(&heartbeat_toggle_timer, HEARTBEAT_TIME_SHORT, K_FOREVER);
     while (true) {
         events = k_event_wait(&main_event, UINT32_MAX, true, K_FOREVER);
-        if (events & MAIN_EVENT_LED_HEARTBEAT) {
-            gpio_pin_toggle_dt(&led_gpio);
-            k_timer_start(&heartbeat_toggle_timer, HEARTBEAT_TOGGLE_PERIOD,
-                          K_FOREVER);
+        if (events & MAIN_EVENT_DSMR_TELEGRAM_RECEIVED) {
+            gpio_pin_set_dt(&led_gpio, 1);
+            k_timer_start(&led_disable_timer, LED_ON_TIME, K_FOREVER);
         }
         if (events & MAIN_EVENT_WIFI_RECONNECT) {
             autoconnect_wifi();
@@ -133,9 +131,9 @@ int main(void) {
  * Private Functions
  *****************************************************************************/
 
-static void heartbeat_timeout_cb(struct k_timer *timer) {
+static void led_disable_timeout_cb(struct k_timer *timer) {
     ARG_UNUSED(timer);
-    k_event_post(&main_event, MAIN_EVENT_LED_HEARTBEAT);
+    gpio_pin_set_dt(&led_gpio, 0);
 }
 
 static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
@@ -186,6 +184,8 @@ static void autoconnect_wifi(void) {
 
 static void telegram_received_cb(const uint8_t *data, size_t len,
                                  void *user_data) {
+    k_event_post(&main_event, MAIN_EVENT_DSMR_TELEGRAM_RECEIVED);
+
     int ret = k_mutex_lock(&telegram_mu, K_NO_WAIT);
     if (ret < 0) {
         LOG_ERR("could not lock telegram mutex: %d", ret);
