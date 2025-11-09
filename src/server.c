@@ -63,7 +63,7 @@ LOG_MODULE_REGISTER(server, CONFIG_LOG_MAX_LEVEL);
 
 static int server_fd = -1;
 static uint8_t rx_buf[1024] = {0};
-static uint8_t tx_buf[1024] = {0};
+static uint8_t tx_buf[8192] = {0};
 
 BUILD_ASSERT(
     sizeof(tx_buf) > sizeof(http_insufficient_storage),

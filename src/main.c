@@ -59,6 +59,10 @@ static void autoconnect_wifi(void);
 static void telegram_received_cb(const uint8_t *data, size_t len,
                                  void *user_data);
 
+static int resource_handle_index(const struct server_request *req,
+                                 struct server_response *res);
+static int resource_handle_favicon(const struct server_request *req,
+                                   struct server_response *res);
 static int resource_handle_data(const struct server_request *req,
                                 struct server_response *res);
 static void resource_handle_data_on_done(int err);
@@ -83,6 +87,15 @@ static size_t last_telegram_len = 0;
 static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
 K_MUTEX_DEFINE(telegram_mu);
 
+const const uint8_t index_html_gz[] = {
+#include "index.html.gz.inc"
+};
+
+static const uint8_t favicon_ico_gz[] = {
+#include "favicon.ico.gz.inc"
+};
+
+
 /******************************************************************************
  * Public Functions
  *****************************************************************************/
@@ -100,6 +113,9 @@ int main(void) {
     }
 
     autoconnect_wifi();
+    server_add_resource("/", &resource_handle_index);
+    server_add_resource("/main.js", &resource_handle_main_js);
+    server_add_resource("/favicon.ico", &resource_handle_favicon);
     server_add_resource("/data", &resource_handle_data);
     server_add_resource("/version", &resource_handle_version);
     server_start();
@@ -198,6 +214,38 @@ static void telegram_received_cb(const uint8_t *data, size_t len,
     k_mutex_unlock(&telegram_mu);
 }
 
+static int resource_handle_index(const struct server_request *req,
+                                 struct server_response *res) {
+    if (req->method != HTTP_GET) {
+        return -ENOSYS;
+    }
+
+    res->status = HTTP_200_OK;
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Type",
+                       (uint64_t)"text/html", NULL);
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Encoding",
+                       (uint64_t)"gzip", NULL);
+    res->body = index_html_gz;
+    res->body_len = sizeof(index_html_gz);
+    return 0;
+}
+
+static int resource_handle_favicon(const struct server_request *req,
+                                   struct server_response *res) {
+    if (req->method != HTTP_GET) {
+        return -ENOSYS;
+    }
+
+    res->status = HTTP_200_OK;
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Type",
+                       (uint64_t)"image/svg+xml", NULL);
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Encoding",
+                       (uint64_t)"gzip", NULL);
+    res->body = favicon_ico_gz;
+    res->body_len = sizeof(favicon_ico_gz);
+    return 0;
+}
+
 static int resource_handle_data(const struct server_request *req,
                                 struct server_response *res) {
     if (req->method != HTTP_GET) {
@@ -211,7 +259,8 @@ static int resource_handle_data(const struct server_request *req,
     }
 
     res->status = HTTP_200_OK;
-    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Type", (uint64_t)"text/plain", NULL);
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Type",
+                       (uint64_t)"text/plain", NULL);
     res->body = last_telegram;
     res->body_len = last_telegram_len;
     res->on_done = resource_handle_data_on_done;

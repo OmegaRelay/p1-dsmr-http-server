@@ -16,3 +16,16 @@ target_sources(app
         src/server.c
         src/http.c
 )
+
+set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
+foreach(web_resource
+  index.html
+  favicon.ico
+    )
+  generate_inc_file_for_target(
+    app
+    src/web/${web_resource}
+    ${gen_dir}/${web_resource}.gz.inc
+    --gzip
+  )
+endforeach()

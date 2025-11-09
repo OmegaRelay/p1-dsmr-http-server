@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<meta http-equiv="X-UA-Compatible" content="ie=edge">
+		<title>DSMR P1</title>
+		<link rel="icon" href="./favicon.ico" type="image/svg+xml">
+		<style>
+			Body {
+				color: white;
+				background-color: #666;
+			}
+			div.center {
+				text-align: center;
+			}
+			div.right {
+				text-align: right;
+			}
+			table.center {
+				margin-left: auto;
+				margin-right: auto;
+			}
+			.collapsible {
+				background-color: #444;
+				color: white;
+				cursor: pointer;
+				padding: 18px;
+				width: 100%;
+				border: none;
+				text-align: center;
+				outline: none;
+				font-size: 15px;
+			}
+			.active, .collapsible:hover {
+				background-color: #333;
+			}
+			.content {
+				background-color: #555;
+				padding: 0 18px;
+				display: none;
+				overflow: hidden;
+				color: white;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<div class="center">
+				<h1>DSMR P1 Port Reader Configuration</h1>
+				<button type="button" class="collapsible">WiFi Credentials</button>
+				<div class="content">
+					<table class="center">
+						<tr>
+							<td>
+								<div class="right">
+									<label for="wifi_psk">WiFi SSID:</label>
+								</div>
+							</td>
+							<td>
+								<input id="wifi_ssid" type="text" value="">
+							</td>
+						</tr>
+						<tr>
+							<td>
+								<div class="right">
+									<label for="wifi_psk">WiFi Password:</label>
+								</div>
+							</td>
+							<td>
+								<input id="wifi_psk" type="password" value="">
+							</td>
+						</tr>
+						<tr>
+							<td></td>
+							<td>
+								<input id="wifi_save" type="button" value="Save">
+							</td>
+						</tr>
+					</table>
+				</div>
+				<br>
+				<button type="button" class="collapsible">Serial</button>
+				<div class="content">
+					<p>
+						Serial communication type etc...
+					</p>
+				</div>
+				<br>
+				<button type="button" class="collapsible">Network</button>
+				<div class="content">
+					<p>
+						Hostname, TLS keys, VPN config etc...
+					</p>
+				</div>
+				<br>
+			</div>
+		</main>
+		<script>
+			var coll = document.getElementsByClassName("collapsible");
+			var i;
+			
+			for (i = 0; i < coll.length; i++) {
+				coll[i].addEventListener("click", function() {
+					this.classList.toggle("active");
+					var content = this.nextElementSibling;
+					if (content.style.display === "block") {
+						content.style.display = "none";
+						} else {
+							content.style.display = "block";
+						}
+						});
+					}
+		</script>
+	</body>
+</html>
