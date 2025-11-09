@@ -11,6 +11,7 @@
  * Includes
  *****************************************************************************/
 
+#include "zephyr/sys/hash_map.h"
 #include <stddef.h>
 #include <zephyr/net/http/method.h>
 #include <zephyr/net/http/status.h>
@@ -34,6 +35,7 @@ struct server_request {
 
 struct server_response {
     int status;
+    struct sys_hashmap headers;
     char *body;
     size_t body_len;
     void (*on_done)(int err);

@@ -9,6 +9,7 @@
  *****************************************************************************/
 
 #include "server.h"
+#include "http.h"
 #include "zephyr/net/http/status.h"
 #include <errno.h>
 #include <string.h>
@@ -32,8 +33,6 @@
 #define STATUS_STR_LEN 3
 #define HTTP_DELIM "\r\n";
 
-static const char http_protocol[] = "HTTP/1.1";
-static const char http_delim[] = HTTP_DELIM;
 // Just incase response cannot be serialized, use this string
 static const char http_insufficient_storage[] =
     "HTTP/1.1 507 Insufficient Storage\r\n\r\n";
@@ -53,6 +52,7 @@ static void route_request(const struct server_request *req,
                           struct server_response *res);
 static int serialize_response(const struct server_response *res, uint8_t *buf,
                               size_t len);
+static void serialize_response_append_header(uint64_t key, uint64_t value, void *cookie);
 static enum http_status errno_to_http_status(int err);
 
 /******************************************************************************
@@ -223,22 +223,21 @@ static void handle_client(int fd, const struct sockaddr_in addr,
     LOG_INF("%d http request on %s", parser.method, request.url);
     LOG_HEXDUMP_INF(request.body, request.body_len, "request body");
 
+    SYS_HASHMAP_DEFINE_STATIC(headers_map);
+    sys_hashmap_clear(&headers_map, NULL, NULL);
+
     struct server_response response = {};
+    response.headers = headers_map;
     route_request(&request, &response);
-    size_t tx_len = 0;
     ret = serialize_response(&response, tx_buf, sizeof(tx_buf));
-    if (ret <= 0) {
-        LOG_ERR("could not serialize response: %d", ret);
-        memset(tx_buf, 0, sizeof(tx_buf));
-        memcpy(tx_buf, http_insufficient_storage,
-               sizeof(http_insufficient_storage));
-        tx_len = sizeof(http_insufficient_storage) - 1;
-    } else {
-        tx_len = ret;
+    if (ret < 0) {
+        LOG_ERR("failed to serialize response: %d", ret);
+        return;
     }
 
+    size_t tx_len = ret;
     LOG_HEXDUMP_INF(tx_buf, tx_len, "response:");
-    ret = zsock_send(fd, tx_buf, tx_len, 0);
+    zsock_send(fd, tx_buf, tx_len, 0);
     if (response.on_done) {
         response.on_done(ret);
     }
@@ -275,53 +274,50 @@ static void route_request(const struct server_request *req,
 
     int ret = resource_cb(req, res);
     if (ret < 0) {
-        memset(res, 0, sizeof(*res));
+        sys_hashmap_clear(&res->headers, NULL, NULL);
+        res->body = NULL;
+        res->body_len = 0;
         res->status = errno_to_http_status(ret);
     }
 }
 
 static int serialize_response(const struct server_response *res, uint8_t *buf,
                               size_t len) {
-    size_t offset = 1; // NULL terminator
-    memset(buf, 0, len);
-
-    offset += (sizeof(http_protocol) - 1);
-    if (len < offset) {
-        return -ENOMEM;
-    }
-    strncat(buf, http_protocol, sizeof(http_protocol));
-
-    char status_buf[1 + STATUS_STR_LEN + sizeof(http_delim)] = "";
-    offset += (sizeof(status_buf) - 1);
-    if (len < offset) {
-        return -ENOMEM;
-    }
-    (void)snprintf(status_buf, sizeof(status_buf), " %d%s", res->status,
-                   http_delim);
-    strncat(buf, status_buf, sizeof(status_buf));
-
-    // TODO: implement header mechanism
-
-    offset += (sizeof(http_delim) - 1);
-    if (len < offset) {
-        return -ENOMEM;
-    }
-    strncat(buf, http_delim, sizeof(http_delim));
-
-    if (res->body == NULL || res->body_len == 0) {
-        goto exit;
+    http_encoder_ctx_t ctx = {};
+    int ret = http_encoder_init(&ctx, buf, len, res->status);
+    if (ret < 0) {
+        return ret;
     }
 
-    if (len < offset + res->body_len) {
-        return -ENOMEM;
+    if (!sys_hashmap_is_empty(&res->headers)) {
+        sys_hashmap_foreach(&res->headers, serialize_response_append_header, &ctx);
     }
-    // Overwrite NULL terminator
-    memcpy(&buf[offset - 1], res->body, res->body_len);
-    offset += res->body_len;
 
-exit:
-    // Leave out NULL terminator
-    return offset - 1;
+    if (!res->body || !res->body_len) {
+        return ctx.offs;
+    }
+
+    ret = http_encoder_set_body_marker(&ctx);
+    if (ret < 0) {
+        return ret;
+    }
+
+    ret = http_encoder_append(&ctx, res->body, res->body_len);
+    if (ret < 0) {
+        return ret;
+    }
+
+    return ctx.offs;
+}
+
+static void serialize_response_append_header(uint64_t key, uint64_t value, void *cookie) {
+    http_encoder_ctx_t *ctx = cookie;
+    LOG_INF("Header: %s:%s", (char *)key, (char *)value);
+    int ret = http_encoder_append_header(ctx, (char *)key, (char *)value);
+    if (ret < 0) {
+        LOG_ERR("could not parse header: %d", ret);
+    }
+    
 }
 
 static enum http_status errno_to_http_status(int err) {

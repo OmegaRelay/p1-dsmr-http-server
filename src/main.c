@@ -9,10 +9,12 @@
  *****************************************************************************/
 
 #include "server.h"
+#include "zephyr/net/http/status.h"
+#include "zephyr/sys/hash_map.h"
+#include <sys/errno.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/toolchain.h>
 
-#include <errno.h>
 #include <stdint.h>
 #include <zephyr/app_version.h>
 #include <zephyr/kernel.h>
@@ -79,7 +81,6 @@ NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
 
 static size_t last_telegram_len = 0;
 static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
-uint8_t data_buf[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
 K_MUTEX_DEFINE(telegram_mu);
 
 /******************************************************************************
@@ -210,6 +211,7 @@ static int resource_handle_data(const struct server_request *req,
     }
 
     res->status = HTTP_200_OK;
+    sys_hashmap_insert(&res->headers, (uint64_t)"Content-Type", (uint64_t)"text/plain", NULL);
     res->body = last_telegram;
     res->body_len = last_telegram_len;
     res->on_done = resource_handle_data_on_done;

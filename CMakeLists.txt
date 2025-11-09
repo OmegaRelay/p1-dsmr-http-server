@@ -14,4 +14,5 @@ target_sources(app
     PRIVATE 
         src/main.c
         src/server.c
+        src/http.c
 )
