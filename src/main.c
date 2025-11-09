@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <zephyr/app_version.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/wifi_credentials.h>
 #include <zephyr/net/wifi_mgmt.h>
@@ -221,5 +222,13 @@ static void resource_handle_data_on_done(int err) {
 
 static int resource_handle_version(const struct server_request *req,
                                    struct server_response *res) {
-    return -ENOSYS;
+    if (req->method != HTTP_GET) {
+        res->status = HTTP_405_METHOD_NOT_ALLOWED;
+        return 0;
+    }
+
+    res->status = HTTP_200_OK;
+    res->body = APP_VERSION_STRING;
+    res->body_len = sizeof(APP_VERSION_STRING) - 1;
+    return 0;
 }
