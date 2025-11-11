@@ -38,7 +38,8 @@ struct server_response {
     struct sys_hashmap headers;
     char *body;
     size_t body_len;
-    void (*on_done)(int err);
+    void (*on_done)(int err, void *user_data);
+    void *user_data; // Data to be passed into callbacks
 };
 
 typedef int (*server_resource_cb_t)(const struct server_request *req,

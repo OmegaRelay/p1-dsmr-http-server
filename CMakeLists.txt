@@ -20,6 +20,7 @@ target_sources(app
 set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
 foreach(web_resource
   index.html
+  main.js
   favicon.ico
     )
   generate_inc_file_for_target(

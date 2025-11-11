@@ -52,17 +52,18 @@ static void route_request(const struct server_request *req,
                           struct server_response *res);
 static int serialize_response(const struct server_response *res, uint8_t *buf,
                               size_t len);
-static void serialize_response_append_header(uint64_t key, uint64_t value, void *cookie);
+static void serialize_response_append_header(uint64_t key, uint64_t value,
+                                             void *cookie);
 static enum http_status errno_to_http_status(int err);
 
 /******************************************************************************
  * Private Variables
  *****************************************************************************/
 
-LOG_MODULE_REGISTER(server, CONFIG_LOG_MAX_LEVEL);
+LOG_MODULE_REGISTER(server, 3);
 
 static int server_fd = -1;
-static uint8_t rx_buf[1024] = {0};
+static uint8_t rx_buf[16384] = {0};
 static uint8_t tx_buf[8192] = {0};
 
 BUILD_ASSERT(
@@ -194,6 +195,7 @@ server_close:
 static void handle_client(int fd, const struct sockaddr_in addr,
                           const socklen_t addrlen) {
     int ret;
+    memset(rx_buf, 0, sizeof(rx_buf));
     ret = zsock_recv(fd, rx_buf, sizeof(rx_buf), 0);
     if (ret < 0) {
         ret = -*z_errno();
@@ -202,11 +204,11 @@ static void handle_client(int fd, const struct sockaddr_in addr,
     }
     size_t rx_len = (size_t)ret;
 
-    static char addr_str[128] = "";
+    static char addr_str[128] = {0};
     char *dst = net_addr_ntop(addr.sin_family, &addr.sin_addr, addr_str,
                               sizeof(addr_str));
     if (dst != NULL) {
-        LOG_INF("received from %s", addr_str);
+        LOG_INF("received %dB from %s", ret, addr_str);
     }
     LOG_HEXDUMP_INF(rx_buf, rx_len, "data:");
 
@@ -220,8 +222,8 @@ static void handle_client(int fd, const struct sockaddr_in addr,
     http_parser_execute(&parser, &settings, rx_buf, rx_len);
     request.method = parser.method;
 
-    LOG_INF("%d http request on %s", parser.method, request.url);
-    LOG_HEXDUMP_INF(request.body, request.body_len, "request body");
+    LOG_DBG("%d http request on %s", parser.method, request.url);
+    LOG_HEXDUMP_DBG(request.body, request.body_len, "request body");
 
     SYS_HASHMAP_DEFINE_STATIC(headers_map);
     sys_hashmap_clear(&headers_map, NULL, NULL);
@@ -236,10 +238,10 @@ static void handle_client(int fd, const struct sockaddr_in addr,
     }
 
     size_t tx_len = ret;
-    LOG_HEXDUMP_INF(tx_buf, tx_len, "response:");
+    LOG_HEXDUMP_DBG(tx_buf, tx_len, "response:");
     zsock_send(fd, tx_buf, tx_len, 0);
     if (response.on_done) {
-        response.on_done(ret);
+        response.on_done(ret, response.user_data);
     }
 }
 
@@ -265,7 +267,7 @@ static void route_request(const struct server_request *req,
                           struct server_response *res) {
     uint64_t key = (uint64_t)sys_hash32(req->url, strnlen(req->url, 128));
 
-    LOG_INF("uri: %s, key: %llu", req->url, key);
+    LOG_DBG("uri: %s, key: %llu", req->url, key);
     server_resource_cb_t resource_cb;
     if (!sys_hashmap_get(&resource_map, key, (uint64_t *)&resource_cb)) {
         res->status = HTTP_404_NOT_FOUND;
@@ -290,7 +292,8 @@ static int serialize_response(const struct server_response *res, uint8_t *buf,
     }
 
     if (!sys_hashmap_is_empty(&res->headers)) {
-        sys_hashmap_foreach(&res->headers, serialize_response_append_header, &ctx);
+        sys_hashmap_foreach(&res->headers, serialize_response_append_header,
+                            &ctx);
     }
 
     if (!res->body || !res->body_len) {
@@ -310,14 +313,14 @@ static int serialize_response(const struct server_response *res, uint8_t *buf,
     return ctx.offs;
 }
 
-static void serialize_response_append_header(uint64_t key, uint64_t value, void *cookie) {
+static void serialize_response_append_header(uint64_t key, uint64_t value,
+                                             void *cookie) {
     http_encoder_ctx_t *ctx = cookie;
-    LOG_INF("Header: %s:%s", (char *)key, (char *)value);
+    LOG_DBG("Header: %s:%s", (char *)key, (char *)value);
     int ret = http_encoder_append_header(ctx, (char *)key, (char *)value);
     if (ret < 0) {
         LOG_ERR("could not parse header: %d", ret);
     }
-    
 }
 
 static enum http_status errno_to_http_status(int err) {
