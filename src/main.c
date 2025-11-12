@@ -116,7 +116,7 @@ static void resource_handle_config_on_done(int err, void *user_data);
  * Private Variables
  *****************************************************************************/
 
-LOG_MODULE_REGISTER(main, CONFIG_LOG_MAX_LEVEL);
+LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
 K_EVENT_DEFINE(main_event);
 

@@ -4,6 +4,11 @@ endmenu # "Zephyr Kernel"
 
 comment "P1 DSMR HTTP Server"
 
+
+module = APP
+module-str = P1 DSMR HTTP Server
+source "subsys/logging/Kconfig.template.log_config"
+
 config ENABLE_WIFI
     bool "Enable WiFi for the Application"
     select WIFI

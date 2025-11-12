@@ -60,7 +60,7 @@ static enum http_status errno_to_http_status(int err);
  * Private Variables
  *****************************************************************************/
 
-LOG_MODULE_REGISTER(server, 3);
+LOG_MODULE_REGISTER(server, CONFIG_APP_LOG_LEVEL);
 
 static int server_fd = -1;
 static uint8_t rx_buf[16384] = {0};
