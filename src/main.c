@@ -18,6 +18,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/net/dhcpv4_server.h>
 #include <zephyr/net/http/status.h>
 #include <zephyr/net/wifi.h>
 #include <zephyr/net/wifi_credentials.h>
@@ -38,9 +39,12 @@ enum main_event {
     MAIN_EVENT_DSMR_TELEGRAM_RECEIVED = BIT(0),
     MAIN_EVENT_WIFI_RECONNECT = BIT(1),
     MAIN_EVENT_WIFI_CONFIG_UPDATED = BIT(2),
+    MAIN_EVENT_WIFI_AP_ENABLE = BIT(3),
+    MAIN_EVENT_WIFI_AP_DISABLE = BIT(4),
 };
 
 #define LED_ON_TIME K_MSEC(100)
+#define WIFI_AP_DISABLE_TIMEOUT K_MINUTES(2)
 
 static const struct gpio_dt_spec led_gpio =
     GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
@@ -86,11 +90,16 @@ static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
                                              size_t info_length,
                                              void *user_data);
 static void handle_wifi_connect_result(struct wifi_status *status);
+static void wifi_ap_disable_timeout_cb(struct k_timer *timer);
 static void wifi_reconnect_timeout_cb(struct k_timer *timer);
 static void autoconnect_wifi(void);
 static void update_config_from_wifi_cred(void *user_data, const char *ssid,
                                 size_t ssid_len);
 static void update_wifi_cred_from_config(void);
+static int enable_ap_mode(void);
+static int disable_ap_mode(void);
+static void enable_dhcpv4_server(struct net_if *iface);
+static void disable_dhcpv4_server(struct net_if *iface);
 
 static void apply_config(struct config new, int64_t new_fields_bitmap);
 
@@ -122,6 +131,7 @@ K_EVENT_DEFINE(main_event);
 
 K_TIMER_DEFINE(led_disable_timer, led_disable_timeout_cb, NULL);
 K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
+K_TIMER_DEFINE(wifi_ap_disable_timer, wifi_ap_disable_timeout_cb, NULL);
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
                                 net_mgmt_event_static_handler_cb, NULL);
@@ -132,12 +142,27 @@ K_MUTEX_DEFINE(telegram_mu);
 
 static struct config config = {};
 
+static struct net_if *sta_iface = NULL;
+static struct net_if *ap_iface = NULL;
+
 /******************************************************************************
  * Public Functions
  *****************************************************************************/
 
 int main(void) {
     int ret;
+    sta_iface = net_if_get_wifi_sta();
+    if (!sta_iface) {
+        LOG_INF("STA iface: not initialized");
+        return -EIO;
+    }
+
+    ap_iface = net_if_get_wifi_sap();
+    if (!ap_iface) {
+        LOG_INF("AP iface: not initialized");
+        return -EIO;
+    }
+
     if (!gpio_is_ready_dt(&led_gpio)) {
         LOG_ERR("led0 is not ready");
         return -EIO;
@@ -161,6 +186,12 @@ int main(void) {
     server_add_resource("/config", &resource_handle_config);
     server_start();
 
+    ret = enable_ap_mode();
+    if (ret < 0) {
+        LOG_ERR("failed to enable AP: %d", ret);
+        return ret;
+    }
+
     ret = dsmr_p1_set_callback(telegram_received_cb, NULL);
     if (ret < 0) {
         LOG_ERR("failed to set dsmr p1 callback: %d", ret);
@@ -183,6 +214,12 @@ int main(void) {
         }
         if (events & MAIN_EVENT_WIFI_CONFIG_UPDATED) {
             update_wifi_cred_from_config();
+        }
+        if (events & MAIN_EVENT_WIFI_AP_ENABLE) {
+            enable_ap_mode();
+        }
+        if (events & MAIN_EVENT_WIFI_AP_DISABLE) {
+            disable_ap_mode();
         }
     }
 
@@ -213,6 +250,7 @@ static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
     case NET_EVENT_WIFI_DISCONNECT_RESULT:
         LOG_WRN("wifi disconnected");
         k_timer_start(&wifi_reconnect_timer, K_MSEC(500), K_FOREVER);
+        k_event_post(&main_event, MAIN_EVENT_WIFI_AP_ENABLE);
         break;
 
     default:
@@ -225,7 +263,14 @@ static void handle_wifi_connect_result(struct wifi_status *status) {
         LOG_WRN("connection request failed: %d", status->status);
     } else {
         LOG_INF("wifi connected");
+        k_timer_start(&wifi_ap_disable_timer, WIFI_AP_DISABLE_TIMEOUT,
+                      K_FOREVER);
     }
+}
+
+static void wifi_ap_disable_timeout_cb(struct k_timer *timer) {
+    ARG_UNUSED(timer);
+    k_event_post(&main_event, MAIN_EVENT_WIFI_AP_DISABLE);
 }
 
 static void wifi_reconnect_timeout_cb(struct k_timer *timer) {
@@ -236,8 +281,8 @@ static void wifi_reconnect_timeout_cb(struct k_timer *timer) {
 static void autoconnect_wifi(void) {
     int ret;
     if (!wifi_credentials_is_empty()) {
-        struct net_if *iface = net_if_get_wifi_sta();
-        ret = net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, iface, NULL, 0);
+        LOG_INF("auto connect wifi");
+        ret = net_mgmt(NET_REQUEST_WIFI_CONNECT_STORED, sta_iface, NULL, 0);
         if (ret) {
             LOG_ERR("could not auto-connect to network. %d", ret);
         }
@@ -274,6 +319,90 @@ static void update_wifi_cred_from_config(void) {
         LOG_ERR("failed to update wifi creds");
     }
     autoconnect_wifi();
+}
+
+static int enable_ap_mode(void) {
+    LOG_INF("Turning on AP Mode");
+    static struct wifi_connect_req_params ap_config = {};
+    ap_config.ssid = (const uint8_t *)CONFIG_WIFI_AP_SSID;
+    ap_config.ssid_length = strlen(CONFIG_WIFI_AP_SSID);
+    ap_config.psk = (const uint8_t *)CONFIG_WIFI_AP_PSK;
+    ap_config.psk_length = strlen(CONFIG_WIFI_AP_PSK);
+    ap_config.channel = WIFI_CHANNEL_ANY;
+    ap_config.band = WIFI_FREQ_BAND_2_4_GHZ;
+
+    if (strlen(CONFIG_WIFI_AP_PSK) == 0) {
+        ap_config.security = WIFI_SECURITY_TYPE_NONE;
+    } else {
+
+        ap_config.security = WIFI_SECURITY_TYPE_PSK;
+    }
+
+    enable_dhcpv4_server(ap_iface);
+
+    int ret = net_mgmt(NET_REQUEST_WIFI_AP_ENABLE, ap_iface, &ap_config,
+                       sizeof(struct wifi_connect_req_params));
+    if (ret) {
+        LOG_ERR("NET_REQUEST_WIFI_AP_ENABLE failed, err: %d", ret);
+    }
+
+    return ret;
+}
+
+static int disable_ap_mode(void) {
+    disable_dhcpv4_server(ap_iface);
+
+    int ret = net_mgmt(NET_REQUEST_WIFI_AP_DISABLE, ap_iface, NULL, 0);
+    if (ret) {
+        LOG_ERR("NET_REQUEST_WIFI_AP_DISABLE failed, err: %d", ret);
+    }
+
+    return ret;
+}
+
+static void enable_dhcpv4_server(struct net_if *iface) {
+    static struct in_addr addr;
+    static struct in_addr netmaskAddr;
+
+    __ASSERT(iface != NULL, "null iface");
+
+    if (net_addr_pton(AF_INET, CONFIG_WIFI_AP_IP_ADDRESS, &addr)) {
+        LOG_ERR("Invalid address: %s", CONFIG_WIFI_AP_IP_ADDRESS);
+        return;
+    }
+
+    if (net_addr_pton(AF_INET, CONFIG_WIFI_AP_NETMASK, &netmaskAddr)) {
+        LOG_ERR("Invalid netmask: %s", CONFIG_WIFI_AP_NETMASK);
+        return;
+    }
+
+    net_if_ipv4_set_gw(iface, &addr);
+
+    if (net_if_ipv4_addr_add(iface, &addr, NET_ADDR_MANUAL, 0) == NULL) {
+        LOG_ERR("could not set IP address for AP interface");
+    }
+
+    if (!net_if_ipv4_set_netmask_by_addr(iface, &addr, &netmaskAddr)) {
+        LOG_ERR("could not set netmask for AP interface: %s",
+                CONFIG_WIFI_AP_NETMASK);
+    }
+
+    addr.s4_addr[3] += 10; /* Starting IPv4 address for DHCPv4 address pool. */
+
+    if (net_dhcpv4_server_start(iface, &addr) != 0) {
+        LOG_ERR("DHCP server is not started for desired IP");
+        return;
+    }
+
+    LOG_INF("DHCPv4 server started...");
+}
+
+static void disable_dhcpv4_server(struct net_if *iface) {
+    __ASSERT(iface != NULL, "null iface");
+    if (net_dhcpv4_server_stop(iface) != 0) {
+        LOG_ERR("failed to stop DHCP server");
+    }
+    LOG_INF("DHCPv4 server stopped...");
 }
 
 static void apply_config(struct config new, int64_t new_fields_bitmap) {
@@ -425,6 +554,8 @@ static int resource_handle_config(const struct server_request *req,
             LOG_ERR("failed to decode payload: %d", ret);
             break;
         }
+        LOG_INF("new config SSID: %s PSK: %s", new_config.wifi.ssid,
+                new_config.wifi.psk);
         apply_config(new_config, ret);
         break;
     default:

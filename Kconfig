@@ -25,5 +25,21 @@ config WIFI_PSK
 config WIFI_NXP
     default DT_HAS_NXP_WIFI_ENABLED
 
+config WIFI_AP_SSID
+    string "SSID for WiFI access point network"
+    default "P1-DMSR-AP"
+
+config WIFI_AP_PSK
+    string "PSK for WiFI access point network"
+    default "password"
+
+config WIFI_AP_IP_ADDRESS
+    string "IP to use in WiFI access point"
+    default "192.168.1.1"
+
+config WIFI_AP_NETMASK
+    string "Netmask of WiFI access point network"
+    default "255.255.255.0"
+
 endif # WIFI
 
