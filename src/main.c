@@ -16,6 +16,7 @@
 #include <zephyr/app_version.h>
 #include <zephyr/data/json.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/dhcpv4_server.h>
@@ -36,16 +37,23 @@
      NET_EVENT_WIFI_SCAN_RESULT | NET_EVENT_WIFI_SCAN_DONE)
 
 enum main_event {
-    MAIN_EVENT_DSMR_TELEGRAM_RECEIVED = BIT(0),
-    MAIN_EVENT_WIFI_RECONNECT = BIT(1),
-    MAIN_EVENT_WIFI_CONFIG_UPDATED = BIT(2),
-    MAIN_EVENT_WIFI_AP_ENABLE = BIT(3),
-    MAIN_EVENT_WIFI_AP_DISABLE = BIT(4),
+    MAIN_EVENT_WDT_FEED = BIT(0),
+    MAIN_EVENT_DSMR_TELEGRAM_RECEIVED = BIT(1),
+    MAIN_EVENT_WIFI_RECONNECT = BIT(2),
+    MAIN_EVENT_WIFI_CONFIG_UPDATED = BIT(3),
+    MAIN_EVENT_WIFI_AP_ENABLE = BIT(4),
+    MAIN_EVENT_WIFI_AP_DISABLE = BIT(5),
 };
+
+#define WDT_MAX_WINDOW_MS 60000U
+#define WDT_MIN_WINDOW_MS 0U
+#define WDT_FEED_TIMEOUT K_MSEC(20000)
+#define WDT_OPT WDT_OPT_PAUSE_HALTED_BY_DBG
 
 #define LED_ON_TIME K_MSEC(100)
 #define WIFI_AP_DISABLE_TIMEOUT K_MINUTES(2)
 
+static const struct device *wdt = DEVICE_DT_GET(DT_ALIAS(watchdog0));
 static const struct gpio_dt_spec led_gpio =
     GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
@@ -83,6 +91,8 @@ static const struct json_obj_descr config_descr[] = {
  * Private Function Prototypes
  *****************************************************************************/
 
+static int init_wdt(void);
+static void wdt_feed_timeout_cb(struct k_timer *timer);
 static void led_disable_timeout_cb(struct k_timer *timer);
 
 static void net_mgmt_event_static_handler_cb(uint64_t mgmt_event,
@@ -129,12 +139,14 @@ LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
 static K_EVENT_DEFINE(main_event);
 
+static K_TIMER_DEFINE(wdt_feed_timer, wdt_feed_timeout_cb, NULL);
 static K_TIMER_DEFINE(led_disable_timer, led_disable_timeout_cb, NULL);
 static K_TIMER_DEFINE(wifi_ap_disable_timer, wifi_ap_disable_timeout_cb, NULL);
 static K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
                                 net_mgmt_event_static_handler_cb, NULL);
+static int wdt_channel_id = 0;
 
 static size_t last_telegram_len = 0;
 static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
@@ -151,6 +163,13 @@ static struct net_if *ap_iface = NULL;
 
 int main(void) {
     int ret;
+
+    ret = init_wdt();
+    if (ret < 0) {
+        LOG_ERR("failed to init wdt");
+        return ret;
+    }
+
     sta_iface = net_if_get_wifi_sta();
     if (!sta_iface) {
         LOG_INF("STA iface: not initialized");
@@ -202,9 +221,17 @@ int main(void) {
         LOG_WRN("failed to enable dsmr p1: %d", ret);
     }
 
+    k_timer_start(&wdt_feed_timer, WDT_FEED_TIMEOUT, K_FOREVER);
+
     uint32_t events;
     while (true) {
         events = k_event_wait(&main_event, UINT32_MAX, true, K_FOREVER);
+        LOG_DBG("events: 0x%04x", events);
+
+        if (events & MAIN_EVENT_WDT_FEED) {
+            wdt_feed(wdt, wdt_channel_id);
+            k_timer_start(&wdt_feed_timer, WDT_FEED_TIMEOUT, K_FOREVER);
+        }
         if (events & MAIN_EVENT_DSMR_TELEGRAM_RECEIVED) {
             gpio_pin_set_dt(&led_gpio, 1);
             k_timer_start(&led_disable_timer, LED_ON_TIME, K_FOREVER);
@@ -229,6 +256,41 @@ int main(void) {
 /******************************************************************************
  * Private Functions
  *****************************************************************************/
+
+static int init_wdt(void) {
+    int ret;
+    if (!device_is_ready(wdt)) {
+        LOG_ERR("%s: device not ready.\n", wdt->name);
+        return -ENODEV;
+    }
+
+    struct wdt_timeout_cfg wdt_config = {
+        /* Reset SoC when watchdog timer expires. */
+        .flags = WDT_FLAG_RESET_SOC,
+
+        /* Expire watchdog after max window */
+        .window.min = WDT_MIN_WINDOW_MS,
+        .window.max = WDT_MAX_WINDOW_MS,
+    };
+
+    ret = wdt_install_timeout(wdt, &wdt_config);
+    if (ret < 0) {
+        LOG_ERR("Watchdog install error: %d", ret);
+        return ret;
+    }
+    wdt_channel_id = ret;
+
+    ret = wdt_setup(wdt, WDT_OPT);
+    if (ret < 0) {
+        LOG_ERR("Watchdog setup error: %d", ret);
+        return ret;
+    }
+}
+
+static void wdt_feed_timeout_cb(struct k_timer *timer) {
+    ARG_UNUSED(timer);
+    k_event_post(&main_event, MAIN_EVENT_WDT_FEED);
+}
 
 static void led_disable_timeout_cb(struct k_timer *timer) {
     ARG_UNUSED(timer);
