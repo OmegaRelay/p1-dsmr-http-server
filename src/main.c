@@ -305,6 +305,7 @@ static void update_config_from_wifi_cred(void *user_data, const char *ssid,
 }
 
 static void update_wifi_cred_from_config(void) {
+    LOG_INF("wifi credentials updated");
     struct wifi_credentials_personal creds = {};
     memcpy(creds.header.ssid, config.wifi.ssid, sizeof(config.wifi.ssid));
     creds.header.ssid_len = strlen(config.wifi.ssid);
@@ -318,7 +319,11 @@ static void update_wifi_cred_from_config(void) {
     if (ret < 0) {
         LOG_ERR("failed to update wifi creds");
     }
-    autoconnect_wifi();
+
+    ret = net_mgmt(NET_REQUEST_WIFI_DISCONNECT, sta_iface, NULL, 0);
+    if (ret) {
+        LOG_WRN("could not disconnect from network. %d", ret);
+    }
 }
 
 static int enable_ap_mode(void) {
