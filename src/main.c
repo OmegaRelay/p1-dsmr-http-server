@@ -94,7 +94,7 @@ static void wifi_ap_disable_timeout_cb(struct k_timer *timer);
 static void wifi_reconnect_timeout_cb(struct k_timer *timer);
 static void autoconnect_wifi(void);
 static void update_config_from_wifi_cred(void *user_data, const char *ssid,
-                                size_t ssid_len);
+                                         size_t ssid_len);
 static void update_wifi_cred_from_config(void);
 static int enable_ap_mode(void);
 static int disable_ap_mode(void);
@@ -127,18 +127,18 @@ static void resource_handle_config_on_done(int err, void *user_data);
 
 LOG_MODULE_REGISTER(main, CONFIG_APP_LOG_LEVEL);
 
-K_EVENT_DEFINE(main_event);
+static K_EVENT_DEFINE(main_event);
 
-K_TIMER_DEFINE(led_disable_timer, led_disable_timeout_cb, NULL);
-K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
-K_TIMER_DEFINE(wifi_ap_disable_timer, wifi_ap_disable_timeout_cb, NULL);
+static K_TIMER_DEFINE(led_disable_timer, led_disable_timeout_cb, NULL);
+static K_TIMER_DEFINE(wifi_ap_disable_timer, wifi_ap_disable_timeout_cb, NULL);
+static K_TIMER_DEFINE(wifi_reconnect_timer, wifi_reconnect_timeout_cb, NULL);
 
 NET_MGMT_REGISTER_EVENT_HANDLER(wifi_net_mgmt_cb, NET_MGMT_EVENT_WIFI_SET,
                                 net_mgmt_event_static_handler_cb, NULL);
 
 static size_t last_telegram_len = 0;
 static uint8_t last_telegram[DSMR_P1_TELEGRAM_MAX_SIZE] = {0};
-K_MUTEX_DEFINE(telegram_mu);
+static K_MUTEX_DEFINE(telegram_mu);
 
 static struct config config = {};
 
@@ -290,7 +290,7 @@ static void autoconnect_wifi(void) {
 }
 
 static void update_config_from_wifi_cred(void *user_data, const char *ssid,
-                                size_t ssid_len) {
+                                         size_t ssid_len) {
     struct wifi_credentials_personal creds = {};
 
     memcpy(config.wifi.ssid, ssid, MIN(sizeof(config.wifi.ssid), ssid_len));
