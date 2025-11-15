@@ -4,8 +4,8 @@
  * @date 2025-11-02
  */
 
-#ifndef __SERVER_H__
-#define __SERVER_H__
+#ifndef _HTTP_SERVER_H__
+#define _HTTP_SERVER_H__
 
 /******************************************************************************
  * Includes
@@ -52,15 +52,15 @@ typedef int (*server_resource_cb_t)(const struct server_request *req,
 /**
  * Start the HTTP server
  */
-void server_start(void);
+void http_server_start(void);
 
 /**
  * Stop the HTTP server
  */
-void server_stop(void);
+void http_server_stop(void);
 
-int server_add_resource(char *uri, server_resource_cb_t cb);
+int http_server_add_resource(char *uri, server_resource_cb_t cb);
 
-int server_remove_resource(char *uri);
+int http_server_remove_resource(char *uri);
 
-#endif // __SERVER_H__
+#endif // _HTTP_SERVER_H__

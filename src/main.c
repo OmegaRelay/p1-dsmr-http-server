@@ -8,7 +8,8 @@
  * Includes
  *****************************************************************************/
 
-#include "server.h"
+#include "http/server.h"
+#include "tcp/server.h"
 
 #include <dsmr_p1/dsmr_p1.h>
 
@@ -131,6 +132,9 @@ static int resource_handle_config(const struct server_request *req,
                                   struct server_response *res);
 static void resource_handle_config_on_done(int err, void *user_data);
 
+static int handle_tcp_request_cb(uint8_t data, size_t len,
+                                 tcp_server_response_t *res);
+
 /******************************************************************************
  * Private Variables
  *****************************************************************************/
@@ -197,13 +201,18 @@ int main(void) {
     }
 
     autoconnect_wifi();
-    server_add_resource("/", &resource_handle_index);
-    server_add_resource("/main.js", &resource_handle_main_js);
-    server_add_resource("/favicon.ico", &resource_handle_favicon);
-    server_add_resource("/data", &resource_handle_data);
-    server_add_resource("/version", &resource_handle_version);
-    server_add_resource("/config", &resource_handle_config);
-    server_start();
+    http_server_add_resource("/", &resource_handle_index);
+    http_server_add_resource("/main.js", &resource_handle_main_js);
+    http_server_add_resource("/favicon.ico", &resource_handle_favicon);
+    http_server_add_resource("/data", &resource_handle_data);
+    http_server_add_resource("/version", &resource_handle_version);
+    http_server_add_resource("/config", &resource_handle_config);
+    http_server_start();
+    ret = tcp_server_start(8080, &handle_tcp_request_cb);
+    if (ret < 0) {
+        LOG_ERR("failed to start tcp server: %d", ret);
+        return ret;
+    }
 
     ret = enable_ap_mode();
     if (ret < 0) {
@@ -636,4 +645,12 @@ static int resource_handle_config(const struct server_request *req,
 static void resource_handle_config_on_done(int err, void *user_data) {
     ARG_UNUSED(err);
     free(user_data);
+}
+
+static int handle_tcp_request_cb(uint8_t data, size_t len,
+                                 tcp_server_response_t *res) {
+    res->data = last_telegram;
+    res->data_len = last_telegram_len;
+    res->on_done = resource_handle_data_on_done;
+    return 0;
 }

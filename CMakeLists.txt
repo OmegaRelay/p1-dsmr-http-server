@@ -13,8 +13,9 @@ project(p1_http_server)
 target_sources(app 
     PRIVATE 
         src/main.c
-        src/server.c
-        src/http.c
+        src/tcp/server.c
+        src/http/server.c
+        src/http/encoder.c
 )
 
 set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)

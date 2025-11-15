@@ -9,13 +9,14 @@
  *****************************************************************************/
 
 #include "server.h"
-#include "http.h"
-#include "zephyr/net/http/status.h"
+#include "encoder.h"
+
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net/http/method.h>
 #include <zephyr/net/http/parser.h>
+#include <zephyr/net/http/status.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/wifi_credentials.h>
@@ -80,16 +81,16 @@ SYS_HASHMAP_DEFINE_STATIC(resource_map);
  * Public Functions
  *****************************************************************************/
 
-void server_start(void) { k_sem_give(&server_run_sem); }
+void http_server_start(void) { k_sem_give(&server_run_sem); }
 
-void server_stop(void) {
+void http_server_stop(void) {
     k_sem_reset(&server_run_sem);
     if (server_fd >= 0) {
         (void)zsock_close(server_fd);
     }
 }
 
-int server_add_resource(char *uri, server_resource_cb_t cb) {
+int http_server_add_resource(char *uri, server_resource_cb_t cb) {
     int ret;
     uint64_t key = (uint64_t)sys_hash32(uri, strnlen(uri, 128));
     LOG_DBG("resource: uri: %s, key: %llu", uri, key);
@@ -104,7 +105,7 @@ int server_add_resource(char *uri, server_resource_cb_t cb) {
     return 0;
 }
 
-int server_remove_resource(char *uri) {
+int http_server_remove_resource(char *uri) {
     uint64_t key = (uint64_t)sys_hash32(uri, 128);
 
     // For idempotency, dont care if map was deleted or not found

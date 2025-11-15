@@ -1,6 +1,6 @@
 
-#ifndef _SRC_HTTP_H__
-#define _SRC_HTTP_H__
+#ifndef _HTTP_ENCODER_H__
+#define _HTTP_ENCODER_H__
 
 #include <zephyr/kernel.h>
 #include <zephyr/net/http/status.h>
