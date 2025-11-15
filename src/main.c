@@ -285,6 +285,7 @@ static int init_wdt(void) {
         LOG_ERR("Watchdog setup error: %d", ret);
         return ret;
     }
+    return 0;
 }
 
 static void wdt_feed_timeout_cb(struct k_timer *timer) {
