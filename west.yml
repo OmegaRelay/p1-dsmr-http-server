@@ -17,6 +17,7 @@ manifest:
       import:
         name-allowlist:
           - zephyr 
+          - mcuboot
           - mbedtls
           - hal_espressif
 
