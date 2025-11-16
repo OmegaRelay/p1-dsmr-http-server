@@ -1,0 +1,32 @@
+# Generate doxygen documentation and host on pages
+pages:
+  stage: build
+  image: omegarelay/doxygen:1.10.0
+  script:
+    - mkdir -p docs
+    - doxygen tools/doxyfile
+    - mv docs/doxygen/html public
+  artifacts:
+    paths:
+      - public
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+  rules:
+    - if: $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH
+
+# Build the app 
+build_app:
+  stage: build
+  image: zephyrprojectrtos/ci:v0.28.6
+  script: 
+   - west init -l . && west update
+   - west build -b esp32_devkitc/esp32/procpu .
+   - mkdir -p out
+   - mergehex -o out/merged.hex -m build/p1-dsmr-http-server/zephyr/zephyr.signed.hex build/mcuboot/zephyr/zephyr.hex 
+  artifacts:
+    paths:
+      - out
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_REF_NAME == 'release'
+
